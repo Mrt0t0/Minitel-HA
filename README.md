@@ -3,6 +3,7 @@
 **Language / Langue:** [🇫🇷 Français](#minitel-ha--3615-maison) | [🇬🇧 English](#english)
 
 **Contrôlez Home Assistant depuis un vrai Minitel (ou un navigateur web) en Vidéotex.**
+**Control Home Assistant from a real Minitel terminal (or a web browser) using Videotex.**
 
 [![Version](https://img.shields.io/badge/version-1.0-green)](https://github.com/XReyRobert/minitel-ha)
 [![Python](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)
