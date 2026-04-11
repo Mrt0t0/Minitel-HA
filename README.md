@@ -12,6 +12,14 @@
 
 ---
 
+## Aperçu
+
+<p align="center">
+  <img src="screen/1.jpg" width="32%" />
+  <img src="screen/2.jpg" width="32%" />
+  <img src="screen/3.jpg" width="32%" />
+</p>
+
 ## Description
 
 Minitel-HA est une passerelle entre un **Minitel physique** (via ESP32/TelnetPro Iodeo ou Minimit) et **Home Assistant**. Il expose une interface Vidéotex complète accessible depuis :
