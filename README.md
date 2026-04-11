@@ -179,8 +179,9 @@ Le merge est non-destructif : vos personnalisations (`name`, `area`, `visible`) 
 ## 🔌 Connexion Minitel physique
 
 ### Via ESP32 (TelnetPro Iodeo ou Minimit)
-Configurer l'ESP32 pour se connecter en WebSocket à `ws:[IP_SERVEUR]:3615`
-'Louis H - https://iodeo.fr/' et 'https://www.multiplie.fr/produit/minimit/'
+```Configurer l'ESP32 pour se connecter en WebSocket à `ws:[IP_SERVEUR]:3615`
+```
+Louis H - https://iodeo.fr/ et https://www.multiplie.fr/produit/minimit/
 ---
 
 ## Pages Vidéotex (.vdt)
