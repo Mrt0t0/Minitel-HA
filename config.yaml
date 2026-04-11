@@ -1,0 +1,84 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+#  MINITEL-HA — Configuration  v1.0
+# ═══════════════════════════════════════════════════════════════════════════════
+
+homeassistant:
+  url:   http://192.168.1.XX:8123
+  token: ebJ00000aaaaaa000000....
+
+server:
+  vt_port:   3615
+  http_port: 8080
+
+display:
+  page_size:      9 # Entités par pages
+  refresh_auto:   30
+  date_format:    "%H:%M"
+  show_sensors:   true
+  # Splash 7 secondes, date en français, centré
+  splash_seconds: 7
+
+# ─── ARCHIVES VIDEOTEX ────────────────────────────────────────────────────────
+# Dossier local — déposez vos fichiers .vdt manuellement.
+# auto_rotate : rotation automatique (secondes). 0 = désactivé.
+archives:
+  folder:      "static/archives"
+  auto_rotate: 30
+
+# ─── ASSISTANT ────────────────────────────────────────────────────────────────
+assistant:
+  language:      "fr"
+  default_agent: "Groq"
+  agents:
+    - id:   "conversation.groq"
+      name: "Groq"
+    # - id:   "conversation.groq"
+    #   name: "Groq"
+    # Chercher votre entité dans HA
+
+area_order:
+  - Salon
+  - Chambre
+  - Cuisine
+  - Autres
+
+scenes:
+  - name: "Cinema"
+    entity: scene.cinema
+  - name: "Repas"
+    entity: scene.repas
+  - name: "Bonne nuit"
+    entity: scene.bonne_nuit
+  - name: "Reveil"
+    entity: scene.reveil
+
+scripts:
+  - name: "Alarme OFF"
+    entity: script.alarme_off
+
+quick_off:
+  entity:  scene.tout_eteindre
+  name:    "Tout eteindre"
+  confirm: true
+
+# ─── MÉTÉO ────────────────────────────────────────────────────────────────────
+meteo:
+  weather_entity: "weather.forecast_maison"
+  sensors:
+    temperature_ext: sensor.temp_exterieur_temperature #a adapter avec vos entités HA
+    humidity_ext:    sensor.temp_balcon_humidity #a adapter avec vos entités HA
+    rooms:
+      Salon:
+        temp: sensor.thermometre_salon_temperature
+        hum:  sensor.thermometre_salon_humidite
+
+discovery:
+  domains:          [light, switch]
+  sensor_classes:   [temperature, humidity]
+  exclude_keywords: [_energy, _power, _current, _voltage, _rssi, _wifi]
+  exclude_entities: []
+
+devices:
+
+
+sensors:

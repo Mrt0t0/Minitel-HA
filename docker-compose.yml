@@ -1,0 +1,11 @@
+services:
+  minitel-ha:
+    build: .
+    container_name: minitel-ha
+    working_dir: /app
+    volumes:
+      - .:/app
+    ports:
+      - "3615:3615"
+      - "8080:8080"
+    restart: unless-stopped
