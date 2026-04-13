@@ -44,8 +44,8 @@ async def run():
     print(f"{'='*50}")
     print(f"  {len(devices_raw)} appareils | {len(sensors_raw)} capteurs\n")
 
-    existing_devices = {d['entity']: d for d in cfg.get('devices', [])}
-    existing_sensors = {s['entity']: s for s in cfg.get('sensors', [])}
+    existing_devices = {d['entity']: d for d in (cfg.get('devices') or [])}
+    existing_sensors = {s['entity']: s for s in (cfg.get('sensors') or [])}
     merged_devices, merged_sensors = [], []
     discovered_eids, discovered_sids = set(), set()
 
