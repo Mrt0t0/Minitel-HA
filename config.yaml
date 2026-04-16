@@ -1,84 +1,334 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 #  MINITEL-HA — Configuration  v1.0
+#  https://github.com/Mrt0t0/Minitel-HA
+#
+#  FR : Copiez ce fichier et adaptez chaque section à votre installation.
+#       Les sections [devices] et [sensors] sont remplies automatiquement
+#       par la commande : docker compose run --rm minitel-ha python discover.py
+#
+#  EN : Copy this file and adapt each section to your setup.
+#       The [devices] and [sensors] sections are populated automatically
+#       by running : docker compose run --rm minitel-ha python discover.py
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
+# ─── HOME ASSISTANT ───────────────────────────────────────────────────────────
+#
+# FR : Adresse IP ou nom DNS de votre instance Home Assistant.
+#      Le token se crée dans HA → Profil → Sécurité → Jetons d'accès longue durée.
+#
+# EN : IP address or DNS name of your Home Assistant instance.
+#      Token is created in HA → Profile → Security → Long-Lived Access Tokens.
+# ──────────────────────────────────────────────────────────────────────────────
 homeassistant:
-  url:   http://192.168.1.XX:8123
-  token: ebJ00000aaaaaa000000....
+  url:   http://192.168.1.XX:8123       # FR: URL de HA  /  EN: HA URL
+  token: eyJ0000aaaa0000....            # FR: Token HA (Long-Lived Access Token)  /  EN: HA token
 
+
+# ─── SERVEUR ──────────────────────────────────────────────────────────────────
+#
+# FR : Ports réseau exposés par Minitel-HA.
+#      vt_port  : WebSocket Videotex — connecter l'ESP32/TelnetPro ici.
+#      http_port: Interface navigateur — accès via http://[IP]:8080
+#
+# EN : Network ports exposed by Minitel-HA.
+#      vt_port  : Videotex WebSocket — connect your ESP32/TelnetPro here.
+#      http_port: Browser interface — access via http://[IP]:8080
+# ──────────────────────────────────────────────────────────────────────────────
 server:
-  vt_port:   3615
-  http_port: 8080
+  vt_port:   3615    # FR: Port WebSocket Minitel (ESP32/TelnetPro/Minimit)  /  EN: Minitel WebSocket port
+  http_port: 8080    # FR: Port interface navigateur web  /  EN: Web browser interface port
 
+
+# ─── AFFICHAGE / DISPLAY ──────────────────────────────────────────────────────
+#
+# FR : Paramètres d'affichage de l'interface.
+#      page_size    : nombre d'appareils affichés par page en mode Domotique.
+#      refresh_auto : intervalle de rafraîchissement automatique (secondes).
+#      date_format  : format de l'heure affichée (notation Python strftime).
+#      show_sensors : afficher les capteurs dans la vue domotique.
+#      splash_seconds: durée du splash screen au démarrage (secondes).
+#
+# EN : Interface display settings.
+#      page_size    : number of devices shown per page in Home control mode.
+#      refresh_auto : auto-refresh interval in seconds.
+#      date_format  : displayed time format (Python strftime notation).
+#      show_sensors : show sensors in home control view.
+#      splash_seconds: startup splash screen duration in seconds.
+# ──────────────────────────────────────────────────────────────────────────────
 display:
-  page_size:      9 # Entités par pages
-  refresh_auto:   30
-  date_format:    "%H:%M"
-  show_sensors:   true
-  # Splash 7 secondes, date en français, centré
-  splash_seconds: 7
+  page_size:      9           # FR: Appareils par page (mode D)  /  EN: Devices per page (D mode)
+  refresh_auto:   30          # FR: Rafraîchissement auto (sec)  /  EN: Auto-refresh (sec)
+  date_format:    "%H:%M"     # FR: Format heure affichée        /  EN: Displayed time format
+  show_sensors:   true        # FR: Afficher capteurs            /  EN: Show sensors
+  splash_seconds: 7           # FR: Durée splash (sec)           /  EN: Splash duration (sec)
+
 
 # ─── ARCHIVES VIDEOTEX ────────────────────────────────────────────────────────
-# Dossier local — déposez vos fichiers .vdt manuellement.
-# auto_rotate : rotation automatique (secondes). 0 = désactivé.
+#
+# FR : Pages Vidéotex statiques (.vdt) affichées dans le mode [R] Archives.
+#      Déposez vos fichiers .vdt manuellement dans le dossier indiqué.
+#      Source de pages .vdt : https://github.com/XReyRobert/VideotexPagesRepository
+#      auto_rotate : rotation automatique entre les fichiers (secondes). 0 = désactivé.
+#
+# EN : Static Videotex pages (.vdt) displayed in [R] Archives mode.
+#      Manually place your .vdt files in the specified folder.
+#      Source of .vdt pages: https://github.com/XReyRobert/VideotexPagesRepository
+#      auto_rotate: automatic rotation between files (seconds). 0 = disabled.
+# ──────────────────────────────────────────────────────────────────────────────
 archives:
-  folder:      "static/archives"
-  auto_rotate: 30
+  folder:      "static/archives"  # FR: Dossier des fichiers .vdt  /  EN: .vdt files folder
+  auto_rotate: 30                 # FR: Rotation auto (sec, 0=off)  /  EN: Auto-rotate (sec, 0=off)
 
-# ─── ASSISTANT ────────────────────────────────────────────────────────────────
+
+# ─── ASSISTANT IA ─────────────────────────────────────────────────────────────
+#
+# FR : Configuration de l'assistant conversationnel (mode [A]).
+#      language     : langue des échanges avec l'assistant ("fr" ou "en").
+#      default_agent: identifiant de l'agent utilisé par défaut.
+#      agents       : liste des agents disponibles (navigables avec la touche SUITE).
+#                     L'id doit correspondre à une entité HA de type conversation.*
+#                     Exemples : "conversation.home_assistant" (agent natif HA),
+#                                "conversation.groq" (si intégration Groq installée),
+#                                "conversation.openai" (si intégration OpenAI installée).
+#
+# EN : Conversational assistant configuration ([A] mode).
+#      language     : conversation language ("fr" or "en").
+#      default_agent: id of the default agent.
+#      agents       : list of available agents (navigate with SUITE key).
+#                     The id must match a HA entity of type conversation.*
+#                     Examples: "conversation.home_assistant" (native HA agent),
+#                               "conversation.groq" (if Groq integration is installed),
+#                               "conversation.openai" (if OpenAI integration is installed).
+#
+# FR : Pour trouver vos entités d'agent IA dans HA :
+#      Outils de développement → États → filtrer "conversation."
+# EN : To find your AI agent entities in HA:
+#      Developer tools → States → filter "conversation."
+# ──────────────────────────────────────────────────────────────────────────────
 assistant:
-  language:      "fr"
-  default_agent: "Groq"
+  language:      "fr"              # FR: Langue de l'assistant  /  EN: Assistant language
+  default_agent: "home_assistant"  # FR: Agent par défaut       /  EN: Default agent id
   agents:
-    - id:   "conversation.groq"
-      name: "Groq"
+    - id:   "conversation.home_assistant"
+      name: "Assistant HA"         # FR: Agent natif Home Assistant  /  EN: Native HA agent
     # - id:   "conversation.groq"
-    #   name: "Groq"
-    # Chercher votre entité dans HA
+    #   name: "Groq"               # FR: Agent Groq (nécessite l'intégration Groq dans HA)
+    #                              # EN: Groq agent (requires Groq integration in HA)
+    # - id:   "conversation.openai"
+    #   name: "OpenAI"             # FR: Agent OpenAI  /  EN: OpenAI agent
 
+
+# ─── ORDRE DES ZONES / AREA ORDER ────────────────────────────────────────────
+#
+# FR : Définit l'ordre d'affichage des zones (pièces) dans le mode Domotique.
+#      Les zones non listées ici apparaissent en dernier, dans l'ordre alphabétique.
+#      Ces noms doivent correspondre exactement au champ "area" de chaque appareil.
+#
+# EN : Defines the display order of areas (rooms) in Home control mode.
+#      Areas not listed here appear last, in alphabetical order.
+#      These names must exactly match the "area" field of each device.
+# ──────────────────────────────────────────────────────────────────────────────
 area_order:
-  - Salon
+  - Salon      # FR: Première zone affichée  /  EN: First area displayed
   - Chambre
   - Cuisine
-  - Autres
+  - Autres     # FR: Zone par défaut pour les appareils sans zone  /  EN: Default area
 
+
+# ─── SCÈNES / SCENES ──────────────────────────────────────────────────────────
+#
+# FR : Liste des scènes HA activables depuis le mode [S] Scènes.
+#      name   : nom affiché dans l'interface (40 caractères max).
+#      entity : identifiant exact de l'entité HA (scene.xxx ou script.xxx).
+#      Sélectionner et activer : chiffre correspondant + touche ENVOI.
+#
+# EN : List of HA scenes activatable from [S] Scenes mode.
+#      name   : name displayed in the interface (max 40 characters).
+#      entity : exact HA entity id (scene.xxx or script.xxx).
+#      Select and activate: corresponding number + ENVOI key.
+# ──────────────────────────────────────────────────────────────────────────────
 scenes:
-  - name: "Cinema"
+  - name:   "Cinema"
     entity: scene.cinema
-  - name: "Repas"
+  - name:   "Repas"
     entity: scene.repas
-  - name: "Bonne nuit"
+  - name:   "Bonne nuit"
     entity: scene.bonne_nuit
-  - name: "Reveil"
+  - name:   "Reveil"
     entity: scene.reveil
 
+
+# ─── SCRIPTS ──────────────────────────────────────────────────────────────────
+#
+# FR : Liste des scripts HA activables depuis le mode [S] Scènes (section Scripts).
+#      Même format que les scènes ci-dessus.
+#
+# EN : List of HA scripts activatable from [S] Scenes mode (Scripts section).
+#      Same format as scenes above.
+# ──────────────────────────────────────────────────────────────────────────────
 scripts:
-  - name: "Alarme OFF"
+  - name:   "Alarme OFF"
     entity: script.alarme_off
 
+
+# ─── EXTINCTION RAPIDE / QUICK OFF ───────────────────────────────────────────
+#
+# FR : Action déclenchée par la touche * en mode Domotique.
+#      Typiquement une scène "tout éteindre".
+#      entity : entité HA à activer (scene.xxx ou script.xxx).
+#      name   : nom affiché dans le journal après activation.
+#      confirm: (réservé) confirmation avant exécution.
+#
+# EN : Action triggered by the * key in Home control mode.
+#      Typically a "turn everything off" scene.
+#      entity : HA entity to activate (scene.xxx or script.xxx).
+#      name   : name shown in the logbook after activation.
+#      confirm: (reserved) confirmation before execution.
+# ──────────────────────────────────────────────────────────────────────────────
 quick_off:
   entity:  scene.tout_eteindre
   name:    "Tout eteindre"
   confirm: true
 
-# ─── MÉTÉO ────────────────────────────────────────────────────────────────────
+
+# ─── MÉTÉO / WEATHER ──────────────────────────────────────────────────────────
+#
+# FR : Configuration du mode [M] Météo.
+#      weather_entity : entité HA de type weather.* pour les prévisions.
+#                       Trouver dans HA → Intégrations → Météo.
+#      sensors        :
+#        temperature_ext / humidity_ext : capteurs extérieurs (optionnels).
+#        rooms : capteurs intérieurs par pièce.
+#                Chaque pièce peut avoir temp et/ou hum.
+#                Le nom de la pièce est libre (affiché tel quel).
+#
+# EN : [M] Weather mode configuration.
+#      weather_entity : HA entity of type weather.* for forecasts.
+#                       Find in HA → Integrations → Weather.
+#      sensors        :
+#        temperature_ext / humidity_ext : outdoor sensors (optional).
+#        rooms : indoor sensors by room.
+#                Each room can have temp and/or hum.
+#                Room name is free-form (displayed as-is).
+# ──────────────────────────────────────────────────────────────────────────────
 meteo:
-  weather_entity: "weather.forecast_maison"
+  weather_entity: "weather.forecast_maison"   # FR: Entité météo HA  /  EN: HA weather entity
+
   sensors:
-    temperature_ext: sensor.temp_exterieur_temperature #a adapter avec vos entités HA
-    humidity_ext:    sensor.temp_balcon_humidity #a adapter avec vos entités HA
+    # FR: Capteurs extérieurs (optionnels — supprimer si absent)
+    # EN: Outdoor sensors (optional — remove if not available)
+    temperature_ext: sensor.temp_exterieur_temperature   # FR: À adapter  /  EN: Adapt to your entity
+    humidity_ext:    sensor.temp_balcon_humidity          # FR: À adapter  /  EN: Adapt to your entity
+
+    # FR: Capteurs intérieurs par pièce
+    #     Ajouter autant de pièces que nécessaire.
+    #     temp et hum sont tous les deux optionnels.
+    # EN: Indoor sensors by room.
+    #     Add as many rooms as needed.
+    #     Both temp and hum are optional.
     rooms:
       Salon:
         temp: sensor.thermometre_salon_temperature
         hum:  sensor.thermometre_salon_humidite
+      # Chambre:
+      #   temp: sensor.thermometre_chambre_temperature
+      #   hum:  sensor.thermometre_chambre_humidite
+      # Cuisine:
+      #   temp: sensor.thermometre_cuisine_temperature
 
+
+# ─── DÉCOUVERTE AUTOMATIQUE / AUTO-DISCOVERY ──────────────────────────────────
+#
+# FR : Paramètres utilisés par la commande :
+#      docker compose run --rm minitel-ha python discover.py
+#
+#      domains         : types d'entités à découvrir (light, switch, etc.).
+#      sensor_classes  : classes de capteurs à inclure (temperature, humidity…).
+#      exclude_keywords: entités dont l'id contient ces mots seront exclues.
+#                        Utile pour filtrer les entités de comptage d'énergie.
+#      exclude_entities: liste d'entités à exclure explicitement par leur id exact.
+#
+# EN : Parameters used by the command:
+#      docker compose run --rm minitel-ha python discover.py
+#
+#      domains         : entity types to discover (light, switch, etc.).
+#      sensor_classes  : sensor device classes to include (temperature, humidity…).
+#      exclude_keywords: entities whose id contains these words will be excluded.
+#                        Useful to filter energy monitoring entities.
+#      exclude_entities: list of entities to explicitly exclude by exact id.
+# ──────────────────────────────────────────────────────────────────────────────
 discovery:
   domains:          [light, switch]
   sensor_classes:   [temperature, humidity]
   exclude_keywords: [_energy, _power, _current, _voltage, _rssi, _wifi]
   exclude_entities: []
+  # FR: Exemples d'entités à exclure manuellement :
+  # EN: Examples of entities to exclude manually:
+  # exclude_entities:
+  #   - switch.zigbee2mqtt_bridge_permit_join
+  #   - light.test_only
 
+
+# ─── APPAREILS / DEVICES ──────────────────────────────────────────────────────
+#
+# FR : Liste des appareils contrôlables (mode [D] Domotique).
+#      Remplie automatiquement par discover.py — ne pas éditer manuellement.
+#      Vous pouvez ensuite personnaliser : name, area, visible.
+#
+#      Champs :
+#        entity  : identifiant exact de l'entité HA (obligatoire).
+#        name    : nom affiché (max 29 caractères).
+#        area    : zone d'affichage — doit correspondre à area_order ci-dessus.
+#        icon    : type d'icône (light ou switch) — cosmétique uniquement.
+#        visible : true = affiché, false = masqué sans suppression.
+#
+# EN : List of controllable devices ([D] Home control mode).
+#      Populated automatically by discover.py — do not edit manually.
+#      You can then customize: name, area, visible.
+#
+#      Fields:
+#        entity  : exact HA entity id (required).
+#        name    : displayed name (max 29 characters).
+#        area    : display area — must match area_order above.
+#        icon    : icon type (light or switch) — cosmetic only.
+#        visible : true = shown, false = hidden without deletion.
+#
+# FR: Exemple / EN: Example:
+# devices:
+# - {entity: light.salon_led, name: Salon Led, area: Salon, icon: light, visible: true}
+# ──────────────────────────────────────────────────────────────────────────────
 devices:
 
 
+# ─── CAPTEURS / SENSORS ───────────────────────────────────────────────────────
+#
+# FR : Liste des capteurs de température et humidité.
+#      Remplie automatiquement par discover.py — ne pas éditer manuellement.
+#      Utilisés dans la vue détaillée du mode Domotique (si show_sensors: true).
+#
+#      Champs :
+#        entity  : identifiant exact de l'entité HA.
+#        name    : nom affiché.
+#        area    : zone associée.
+#        unit    : unité affichée (°C, %, etc.).
+#        class   : classe du capteur (temperature, humidity).
+#        visible : true = affiché, false = masqué.
+#
+# EN : List of temperature and humidity sensors.
+#      Populated automatically by discover.py — do not edit manually.
+#      Used in the detailed view of Home control mode (if show_sensors: true).
+#
+#      Fields:
+#        entity  : exact HA entity id.
+#        name    : displayed name.
+#        area    : associated area.
+#        unit    : displayed unit (°C, %, etc.).
+#        class   : sensor class (temperature, humidity).
+#        visible : true = shown, false = hidden.
+#
+# FR: Exemple / EN: Example:
+# sensors:
+# - {entity: sensor.salon_temp, name: Salon Temp, area: Salon, unit: "°C", class: temperature, visible: true}
+# ──────────────────────────────────────────────────────────────────────────────
 sensors:
