@@ -90,7 +90,7 @@ body{background:#111;display:flex;flex-direction:column;align-items:center;justi
       <div id="splash">
         <div class="sp-title">* MINITEL-HA *</div>
         <div class="sp-sub">Domotique Home Assistant</div>
-        <div class="sp-ver">v1.0 — 3615 MAISON</div>
+        <div class="sp-ver">v1.1 — 3615 MAISON</div>
         <div class="sp-date" id="sp-date"></div>
         <div class="sp-bar-w"><div class="sp-bar" id="sp-bar"></div></div>
         <div class="sp-msg" id="sp-msg">Initialisation...</div>
@@ -196,17 +196,21 @@ var VT={
     if(n===0x4d){state.sizeW=1;state.sizeH=2;return;}
     if(n===0x4e){state.sizeW=2;state.sizeH=1;return;}
     if(n===0x4f){state.sizeW=2;state.sizeH=2;return;}
-    if(n===0x59){state.sep=false;return;}
-    if(n===0x5a){state.sep=true;return;}
-    if(n===0x5c){state.conceal=true;return;}
-    if(n===0x5d){state.conceal=false;return;}
+    if(n===0x58){state.conceal=true;return;}
+    if(n===0x59){state.sep=true;return;}
+    if(n===0x5a){state.sep=false;return;}
+    if(n===0x5c){state.invert=false;return;}
+    if(n===0x5d){state.invert=true;return;}
+    if(n===0x5f){state.conceal=false;return;}
     if(n===0x4a){state.fg=7;state.bg=0;state.graphics=false;state.blink=false;state.conceal=false;state.invert=false;state.sep=false;state.sizeW=1;state.sizeH=1;return;}
   },
   normalizeSize:function(state){var w=state.sizeW||1,h=state.sizeH||1;if(state.col>=this.COLS)state.col=0;if(state.row>=this.ROWS)state.row=this.ROWS-1;if(state.col+w>this.COLS)w=1;if(state.row+h>this.ROWS)h=1;return{w:w,h:h};},
   placeCell:function(screen,state,cell){
     if(state.row<0||state.row>=this.ROWS||state.col<0||state.col>=this.COLS)return;
-    var sz=this.normalizeSize(state);cell.w=sz.w;cell.h=sz.h;cell.skip=false;screen[state.row][state.col]=cell;
-    for(var dy=0;dy<cell.h;dy++)for(var dx=0;dx<cell.w;dx++)if(dx||dy){var rr=state.row+dy,cc=state.col+dx;if(rr<this.ROWS&&cc<this.COLS)screen[rr][cc]={skip:true,anchorR:state.row,anchorC:state.col,bg:cell.bg};}
+    var sz=this.normalizeSize(state);cell.w=sz.w;cell.h=sz.h;cell.skip=false;
+    var top=state.row-(cell.h-1);if(top<0){cell.h=1;top=state.row;}
+    screen[top][state.col]=cell;
+    for(var dy=0;dy<cell.h;dy++)for(var dx=0;dx<cell.w;dx++)if(dx||dy){var rr=top+dy,cc=state.col+dx;if(rr<this.ROWS&&cc<this.COLS)screen[rr][cc]={skip:true,anchorR:top,anchorC:state.col,bg:cell.bg};}
     state.lastCell=this.cloneCell(cell);state.col+=cell.w;if(state.col>=this.COLS){state.col=0;state.row=Math.min(this.ROWS-1,state.row+1);}
   },
   repeatCell:function(screen,state,count){for(var i=0;i<count;i++){var cell=this.cloneCell(state.lastCell||this.makeCell());cell.skip=false;this.placeCell(screen,state,cell);}},
@@ -236,7 +240,7 @@ var VT={
         continue;
       }
       if(b<0x20)continue;
-      if(state.graphics){
+      if(state.graphics && !((raw&0x7f)>=0x40 && (raw&0x7f)<=0x5f)){
         var m=this.decodeMosaicBits(raw);
         this.placeCell(screen,state,{ch:' ',fg:state.fg,bg:state.bg,blink:state.blink,conceal:state.conceal,invert:state.invert,graphics:true,bits:m.bits,sep:(state.sep||m.sep),lr:m.lr,w:state.sizeW,h:state.sizeH,skip:false});
       }else{

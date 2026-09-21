@@ -1,6 +1,6 @@
 services:
   minitel-ha:
-    build: .
+    image: python:3.12-slim
     container_name: minitel-ha
     working_dir: /app
     volumes:
@@ -8,4 +8,7 @@ services:
     ports:
       - "3615:3615"
       - "8080:8080"
+    command: >
+      sh -c "pip install aiohttp websockets pyyaml --quiet &&
+             python server.py"
     restart: unless-stopped

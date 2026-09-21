@@ -1,122 +1,165 @@
 #!/usr/bin/env python3
-import asyncio, yaml, websockets
-from pathlib  import Path
-from aiohttp  import web
-from utils    import log
-import ha_client  as HA
-import pagevideo  as P
+import asyncio
+import yaml
+import aiohttp
+import websockets
+from pathlib import Path
+from aiohttp import web
+
+import ha_client as HA
+import pagevideo as P
 import pagehtml
 import ws_minitel as WM
 import ws_browser as WB
+from utils import log
 
 BASE = Path(__file__).parent
-cfg  = yaml.safe_load(open(BASE / 'config.yaml'))
 
-HA_URL  = cfg['homeassistant']['url']
-HA_TOK  = cfg['homeassistant']['token']
-VT_PORT = cfg['server']['vt_port']
-WB_PORT = cfg['server']['http_port']
-DISP    = cfg.get('display', {})
-REFRESH_AUTO = DISP.get('refresh_auto', 30)
-AREA_ORDER   = cfg.get('area_order', None)
-ARCHIVES_CFG = cfg.get('archives', {})
-ASSIST_CFG   = cfg.get('assistant', {
-    'language': 'fr', 'default_agent': 'home_assistant',
-    'agents': [{'id': 'home_assistant', 'name': 'Assistant HA'}]
-})
+with open(BASE / 'config.yaml', encoding='utf-8') as f:
+    cfg = yaml.safe_load(f) or {}
 
-P.CFG['title']          = DISP.get('title',         P.CFG['title'])
-P.CFG['page_size']      = DISP.get('page_size',      9)
-P.CFG['date_format']    = DISP.get('date_format',    '%H:%M')
-P.CFG['show_sensors']   = DISP.get('show_sensors',   True)
-P.CFG['splash_seconds'] = DISP.get('splash_seconds', 7)
+
+def _get(section, key, default=None):
+    """Lecture robuste : une cle presente mais vide vaut None en YAML."""
+    sec = cfg.get(section) or {}
+    val = sec.get(key, default)
+    return default if val is None else val
+
+
+HA_URL  = _get('homeassistant', 'url', '')
+HA_TOK  = _get('homeassistant', 'token', '')
+VT_PORT = int(_get('server', 'vt_port', 3615))
+WB_PORT = int(_get('server', 'http_port', 8080))
+
+if not HA_URL or not HA_TOK:
+    log('ERR', 'config.yaml : homeassistant.url et .token sont obligatoires')
+    raise SystemExit(1)
+
+P.CFG['page_size']      = int(_get('display', 'page_size', 9))
+P.CFG['date_format']    = _get('display', 'date_format', '%H:%M')
+P.CFG['show_sensors']   = bool(_get('display', 'show_sensors', True))
+P.CFG['splash_seconds'] = int(_get('display', 'splash_seconds', 7))
 P.PAGE_SIZE             = P.CFG['page_size']
+
+REFRESH_AUTO = int(_get('display', 'refresh_auto', 30))
+AREA_ORDER   = cfg.get('area_order') or None
+
+ARCHIVES_CFG    = cfg.get('archives') or {}
+ARCHIVES_FOLDER = (BASE / ARCHIVES_CFG.get('folder', 'static/archives')).resolve()
+ARCHIVES_FOLDER.mkdir(parents=True, exist_ok=True)
 
 HA.configure(HA_URL, HA_TOK)
 pagehtml.load(WB_PORT)
 
-ARCHIVES_FOLDER = BASE / ARCHIVES_CFG.get('folder', 'static/archives')
-ARCHIVES_FOLDER.mkdir(parents=True, exist_ok=True)
 
 def _sort_devices(raw):
     if not AREA_ORDER:
         return sorted(raw, key=lambda d: d.get('area', 'Autres'))
     def key(d):
         a = d.get('area', 'Autres')
-        try:    return AREA_ORDER.index(a)
-        except: return len(AREA_ORDER)
+        return AREA_ORDER.index(a) if a in AREA_ORDER else len(AREA_ORDER)
     return sorted(raw, key=key)
 
+
+_devices = [d for d in (cfg.get('devices') or []) if d.get('visible', True)]
+_sensors = [s for s in (cfg.get('sensors') or []) if s.get('visible', True)]
+
+_assistant = cfg.get('assistant') or {}
+if not _assistant.get('agents'):
+    _assistant['agents'] = [{'id': 'conversation.home_assistant',
+                             'name': 'Assistant HA'}]
+
 _cfg_shared = {
-    'devices':    _sort_devices([d for d in cfg.get('devices', []) if d.get('visible', True)]),
-    'sensors':    [s for s in cfg.get('sensors', []) if s.get('visible', True)],
-    'scenes':     cfg.get('scenes',   []),
-    'scripts':    cfg.get('scripts',  []),
-    'quick_off':  cfg.get('quick_off', None),
-    'meteo':      cfg.get('meteo',    {}),
-    'area_order': AREA_ORDER,
-    'assistant':  ASSIST_CFG,
+    'devices':    _sort_devices(_devices),
+    'sensors':    _sensors,
+    'scenes':     cfg.get('scenes') or [],
+    'scripts':    cfg.get('scripts') or [],
+    'quick_off':  cfg.get('quick_off'),
+    'meteo':      cfg.get('meteo') or {},
+    'assistant':  _assistant,
     'archives':   ARCHIVES_CFG,
+    'area_order': AREA_ORDER,
     '_base':      str(BASE),
 }
 
 WM.configure(_cfg_shared)
 WB.configure(_cfg_shared)
 
-n_vdt = len(list(ARCHIVES_FOLDER.glob('*.vdt')))
-log('INFO', '═' * 46)
-log('INFO', f'  3615 MAISON — Minitel-HA v{P.VERSION}')
-log('INFO', '─' * 46)
-log('INFO', f'  Minitel     ws://0.0.0.0:{VT_PORT}  (ESP32/MiniPavi)')
-log('INFO', f'  Navigateur  http://0.0.0.0:{WB_PORT}')
-log('INFO', f'  HA          {HA_URL}')
-log('INFO', '─' * 46)
-log('INFO', f'  Appareils : {len(_cfg_shared["devices"])} | Capteurs : {len(_cfg_shared["sensors"])}')
-log('INFO', f'  Météo     : {cfg.get("meteo", {}).get("weather_entity", "—")}')
-log('INFO', f'  Archives  : {n_vdt} .vdt dans {ARCHIVES_FOLDER}')
-log('INFO', '═' * 46)
 
-async def http_handler(request):
+def list_vdt():
+    try:
+        return sorted(
+            ({'name': f.stem, 'size': f.stat().st_size}
+             for f in ARCHIVES_FOLDER.glob('*.vdt')),
+            key=lambda x: x['name'])
+    except Exception as e:
+        log('ERR', f'list_vdt: {e}')
+        return []
+
+
+async def http_index(request):
     return web.Response(text=pagehtml.get(), content_type='text/html')
 
-async def archives_list_handler(request):
-    files = [{'name': f.stem, 'size': f.stat().st_size}
-             for f in sorted(ARCHIVES_FOLDER.glob('*.vdt'))]
-    return web.json_response({'files': files, 'total': len(files)})
 
-async def archives_vdt_handler(request):
+async def api_archives_list(request):
+    files = list_vdt()
+    return web.json_response({
+        'files':       files,
+        'total':       len(files),
+        'auto_rotate': int(ARCHIVES_CFG.get('auto_rotate', 30) or 0),
+    })
+
+
+async def api_archives_vdt(request):
     name = request.match_info.get('name', '')
-    name = name.replace('/', '').replace('\\', '').replace('..', '')
-    if not name.endswith('.vdt'):
-        name += '.vdt'
-    vdt_path = (ARCHIVES_FOLDER / name).resolve()
-    if not str(vdt_path).startswith(str(ARCHIVES_FOLDER.resolve())):
-        return web.Response(status=403, text='Accès refusé')
-    if not vdt_path.exists() or not vdt_path.is_file():
-        return web.Response(status=404, text='Fichier introuvable')
-    data = vdt_path.read_bytes()
-    log('INFO', f'VDT servi: {name} ({len(data)} oct)')
-    return web.Response(
-        body=data,
-        content_type='application/octet-stream',
-        headers={'Access-Control-Allow-Origin': '*',
-                 'Content-Disposition': f'inline; filename="{name}"'})
+    if name.lower().endswith('.vdt'):
+        name = name[:-4]
+    target = (ARCHIVES_FOLDER / f'{name}.vdt').resolve()
+    # Empeche toute traversee de repertoire (../)
+    if ARCHIVES_FOLDER not in target.parents or not target.is_file():
+        raise web.HTTPNotFound(text='fichier .vdt introuvable')
+    return web.Response(body=target.read_bytes(),
+                        content_type='application/octet-stream')
+
 
 async def main():
+    log('CFG', f'{len(_cfg_shared["devices"])} appareils | '
+               f'{len(_cfg_shared["sensors"])} capteurs')
+    log('CFG', f'{len(_cfg_shared["scenes"])} scenes | '
+               f'{len(_cfg_shared["scripts"])} scripts | '
+               f'{len(list_vdt())} pages .vdt')
+    log('SRV', f'3615 MAISON -> ws://0.0.0.0:{VT_PORT}')
+    log('SRV', f'Browser     -> http://0.0.0.0:{WB_PORT}')
+    log('SRV', f'HA          -> {HA_URL}')
+
+    # Session HTTP unique partagee par toutes les taches de fond
+    session = aiohttp.ClientSession()
+    WM.set_session(session)
+
     app = web.Application()
-    app.router.add_get('/',                       http_handler)
-    app.router.add_get('/ws',                     WB.browser_ws_handler)
-    app.router.add_get('/api/archives/list',      archives_list_handler)
-    app.router.add_get('/api/archives/vdt/{name}',archives_vdt_handler)
+    app.router.add_get('/',                        http_index)
+    app.router.add_get('/ws',                      WB.browser_ws_handler)
+    app.router.add_get('/api/archives/list',       api_archives_list)
+    app.router.add_get('/api/archives/vdt/{name}', api_archives_vdt)
+    app.router.add_static('/static/', BASE / 'static')
+
     runner = web.AppRunner(app)
     await runner.setup()
     await web.TCPSite(runner, '0.0.0.0', WB_PORT).start()
-    log('INFO', 'Serveurs démarrés')
-    async with websockets.serve(WM.vt_ws_handler, '0.0.0.0', VT_PORT):
-        await asyncio.gather(
-            asyncio.Future(),
-            WM.auto_refresh(REFRESH_AUTO),
-            WM.clock_update(),
-        )
 
-asyncio.run(main())
+    try:
+        async with websockets.serve(WM.vt_ws_handler, '0.0.0.0', VT_PORT):
+            await asyncio.gather(
+                WM.auto_refresh(REFRESH_AUTO),
+                WM.clock_update(),
+            )
+    finally:
+        await session.close()
+        await runner.cleanup()
+
+
+if __name__ == '__main__':
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        log('SRV', 'arret demande')
