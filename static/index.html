@@ -255,7 +255,7 @@ var VT={
   render:function(canvas,bytes,onDone){var screen=this.parse(bytes);this.current={canvas:canvas,screen:screen};this.draw(canvas,screen);if(onDone)onDone();}
 };
 setInterval(function(){if(!VT.current)return;VT.blinkOn=!VT.blinkOn;VT.draw(VT.current.canvas,VT.current.screen);fitVdt();},500);
-var WP='__WB_PORT__',url='ws://'+location.hostname+':'+WP+'/ws',E=function(id){return document.getElementById(id);};
+var url=(location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws',E=function(id){return document.getElementById(id);};
 var splash=E('splash'),spBar=E('sp-bar'),spMsg=E('sp-msg'),spDate=E('sp-date'),scr=E('screen'),ap=E('ap'),rp=E('rp'),ib=E('ib'),md=E('md'),st=E('st'),ah=E('ah'),ai=E('ai'),agb=E('agb'),rl=E('rl'),rt=E('rt'),rs=E('rs'),rvw=E('rvw'),rvwName=E('rvw-name'),rvwCanvas=E('rvw-canvas'),rvwMsg=E('rvw-msg');
 var mode='',curPage=0,pSize=9,agents=[],agIdx=0,arcFiles=[],arcIdx=0,arcRotate=30,arcTimer=null,arcViewing=false,pendingData=null,refreshT=null,splashOver=false,ws=null;
 function fitScreenText(){var w=Math.max(1,scr.clientWidth),h=Math.max(1,scr.clientHeight),size=Math.floor(Math.min(w/(40*0.56),h/(24*1.00)));size=Math.max(18,Math.min(36,size));scr.style.fontSize=size+'px';scr.style.lineHeight='1.00';}

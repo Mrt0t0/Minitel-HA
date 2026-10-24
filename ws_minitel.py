@@ -22,6 +22,9 @@ AREA_ORDER = None
 AGENTS = []
 ARCHIVES_FOLDER = Path('static/archives')
 
+# Sequences SS2 envoyees par le clavier Minitel -> caractere accentue
+_G2_IN = {seq: ch for ch, seq in P.G2.items()}
+
 
 def set_session(session):
     global _SESSION
@@ -65,6 +68,34 @@ def _list_vdt():
     except Exception as e:
         log('ERR', f'list_vdt: {e}')
         return []
+
+
+def _strip_fn_keys(data):
+    """Retire les touches de fonction (0x13 + code). Leur 2e octet est une
+    lettre (ENVOI = 0x13 'A', SUITE = 0x13 'H') a ne pas lire comme saisie."""
+    out, i = bytearray(), 0
+    while i < len(data):
+        if data[i] == 0x13:
+            i += 2
+            continue
+        out.append(data[i])
+        i += 1
+    return bytes(out)
+
+
+def _decode_keys(data):
+    """Texte imprimable saisi au clavier, accents G2 (SS2) compris."""
+    data, out, i = _strip_fn_keys(data), [], 0
+    while i < len(data):
+        if data[i] == 0x19 and i + 1 < len(data):
+            n = 3 if data[i + 1] in b'ABCHK' else 2   # diacritique + lettre
+            out.append(_G2_IN.get(bytes(data[i:i + n]), ''))
+            i += n
+            continue
+        if 0x20 <= data[i] <= 0x7e:
+            out.append(chr(data[i]))
+        i += 1
+    return ''.join(out)
 
 
 async def vt_ws_handler(ws):
@@ -142,6 +173,12 @@ async def vt_ws_handler(ws):
                 elif mode == 'archives':
                     await ws.send(P.build_archives(_list_vdt(), cur['archives_idx'], flash))
 
+            def stop_rotate():
+                nonlocal rotate_task
+                if rotate_task:
+                    rotate_task.cancel()
+                    rotate_task = None
+
             async def switch(mode, general_aide=False):
                 nonlocal rotate_task
                 cur = VT_STATE.get(ws, {})
@@ -152,14 +189,10 @@ async def vt_ws_handler(ws):
                     cur['assist_buf'] = ''
                 if mode == 'aide':
                     cur.update(aide_general=general_aide, aide_page=0)
+                stop_rotate()
                 if mode == 'archives':
                     cur['archives_viewing'] = False
-                    if rotate_task:
-                        rotate_task.cancel()
                     rotate_task = asyncio.ensure_future(rotate_archives())
-                elif rotate_task:
-                    rotate_task.cancel()
-                    rotate_task = None
                 await refresh()
 
             async for raw in ws:
@@ -169,10 +202,12 @@ async def vt_ws_handler(ws):
                     break
                 mode  = st['mode']
                 flash = ''
+                keys  = _strip_fn_keys(data)
                 log('VT', f'[{addr[0]}][{mode}] {data.hex()[:16]}')
 
                 if data in (b'\x13\x49', b'\x13\x46'):          # SOMMAIRE
                     HA.invalidate_cache()
+                    stop_rotate()
                     d, s, stats = await HA.fetch_data(session, DEVICES, SENSORS)
                     st.update(mode='menu', buf='')
                     await ws.send(P.build_menu(stats))
@@ -186,6 +221,7 @@ async def vt_ws_handler(ws):
                             st.update(aide_general=True, aide_page=0)
                             await ws.send(P.build_aide(st['prev_mode'], 0, True))
                     else:
+                        stop_rotate()
                         st.update(prev_mode=mode, mode='aide', buf='',
                                   aide_general=False, aide_page=0)
                         await ws.send(P.build_aide(mode, 0, False))
@@ -214,7 +250,7 @@ async def vt_ws_handler(ws):
                     elif data == b'\x13\x41' or 0x0d in data:
                         await switch(st['prev_mode'])
                     else:
-                        for byte in data:
+                        for byte in keys:
                             ch = chr(byte).lower()
                             if ch in LETTER_MODES:
                                 await switch(LETTER_MODES[ch], general_aide=(ch == 'h'))
@@ -230,7 +266,11 @@ async def vt_ws_handler(ws):
                             step = 1 if data == b'\x13\x48' else -1
                             aidx = (aidx + step) % total
                             st['archives_idx'] = aidx
-                            await ws.send(Path(files[aidx]['path']).read_bytes())
+                            try:
+                                await ws.send(Path(files[aidx]['path']).read_bytes())
+                            except OSError as e:
+                                st['archives_viewing'] = False
+                                await ws.send(P.build_archives(files, aidx, f'Erreur: {e}'))
                         else:
                             st['archives_viewing'] = False
                             await ws.send(P.build_archives(files, aidx))
@@ -240,8 +280,6 @@ async def vt_ws_handler(ws):
                         st['archives_idx'] = (aidx + step) % total
                         await ws.send(P.build_archives(files, st['archives_idx']))
                     elif data == b'\x13\x41' or 0x0d in data:
-                        if st['buf'].isdigit():
-                            aidx = int(st['buf']) - 1
                         if files and 0 <= aidx < total:
                             try:
                                 vdt = Path(files[aidx]['path']).read_bytes()
@@ -251,7 +289,7 @@ async def vt_ws_handler(ws):
                             except Exception as e:
                                 await ws.send(P.build_archives(files, aidx, f'Erreur: {e}'))
                     else:
-                        for byte in data:
+                        for byte in keys:
                             ch = chr(byte)
                             if ch in '123456789' and total:
                                 ri = (st['archives_idx'] // 9) * 9 + int(ch) - 1
@@ -294,9 +332,7 @@ async def vt_ws_handler(ws):
                         st['assist_buf'] = abuf[:-1]
                         await ws.send(P.build_assist_input_line(st['assist_buf']))
                     else:
-                        for byte in data:
-                            if 0x20 <= byte <= 0x7e and len(abuf) < 38:
-                                abuf += chr(byte)
+                        abuf = (abuf + _decode_keys(data))[:P.ASSIST_MAX]
                         st['assist_buf'] = abuf
                         await ws.send(P.build_assist_input_line(abuf))
                     continue
@@ -307,7 +343,7 @@ async def vt_ws_handler(ws):
                         step = 1 if data == b'\x13\x48' else -1
                         st['journal_page'] = (st['journal_page'] + step) % total_jp
                     else:
-                        for byte in data:
+                        for byte in keys:
                             ch = chr(byte).lower()
                             if ch in LETTER_MODES:
                                 await switch(LETTER_MODES[ch], general_aide=(ch == 'h'))
@@ -320,7 +356,7 @@ async def vt_ws_handler(ws):
                     continue
 
                 if mode == 'meteo':
-                    for byte in data:
+                    for byte in keys:
                         ch = chr(byte).lower()
                         if ch in LETTER_MODES:
                             await switch(LETTER_MODES[ch], general_aide=(ch == 'h'))
@@ -345,7 +381,7 @@ async def vt_ws_handler(ws):
                         st['buf'] = ''
                         await ws.send(P.build_scenes(SCENES, SCRIPTS))
                         continue
-                    for byte in data:
+                    for byte in keys:
                         ch = chr(byte)
                         if ch.lower() in LETTER_MODES:
                             await switch(LETTER_MODES[ch.lower()],
@@ -358,7 +394,7 @@ async def vt_ws_handler(ws):
                     continue
 
                 if mode == 'menu':
-                    for byte in data:
+                    for byte in keys:
                         ch = chr(byte).lower()
                         if ch in LETTER_MODES:
                             st['buf'] = ch
@@ -367,12 +403,10 @@ async def vt_ws_handler(ws):
                         buf = st['buf'].lower()
                         if buf in LETTER_MODES:
                             target = LETTER_MODES[buf]
-                            await switch(target, general_aide=(buf == 'h'))
                             if target == 'domotique':
                                 await ws.send(P.build_loading())
                                 d, s, stats = await HA.fetch_data(session, DEVICES, SENSORS)
-                                await ws.send(P.build(d, s, stats, 0, '',
-                                                      area_order=AREA_ORDER))
+                            await switch(target, general_aide=(buf == 'h'))
                     continue
 
                 # ---- mode domotique ----
@@ -404,7 +438,7 @@ async def vt_ws_handler(ws):
                     await ws.send(P.build_input_line(''))
                     continue
                 else:
-                    for byte in data:
+                    for byte in keys:
                         ch = chr(byte)
                         if ch == '*' and QUICK_OFF:
                             ok = await HA.activate(session, QUICK_OFF['entity'],
@@ -450,7 +484,7 @@ async def vt_ws_handler(ws):
                         await ws.send(P.build(d, s, stats, cur['page'], '',
                                               area_order=AREA_ORDER))
 
-    except websockets.exceptions.ConnectionClosed:
+    except websockets.ConnectionClosed:
         pass
     except Exception as e:
         log('ERR', f'vt handler: {type(e).__name__}: {e}')
@@ -483,8 +517,8 @@ async def auto_refresh(delay):
             continue
         HA.invalidate_cache()
         d, s, stats = await HA.fetch_data(_SESSION, DEVICES, SENSORS)
-        await _broadcast(lambda st: P.build(d, s, stats, st.get('page', 0), '',
-                                            area_order=AREA_ORDER))
+        await _broadcast(lambda st: P.build(d, s, stats, st.get('page', 0),
+                                            st.get('buf', ''), area_order=AREA_ORDER))
 
 
 async def clock_update():
