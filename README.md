@@ -4,269 +4,231 @@
 
 **Contrôlez Home Assistant depuis un vrai Minitel (ou un navigateur web) en Vidéotex.**
 
-[![Version](https://img.shields.io/badge/version-1.2-green)](https://github.com/Mrt0t0/Minitel-HA)
+[![Version](https://img.shields.io/badge/version-1.3-green)](https://github.com/Mrt0t0/Minitel-HA)
+[![CI](https://github.com/Mrt0t0/Minitel-HA/actions/workflows/ci.yml/badge.svg)](https://github.com/Mrt0t0/Minitel-HA/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)
 [![Docker](https://img.shields.io/badge/docker-ready-blue)](https://www.docker.com/)
 [![License](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
+
+| Domotique | Graphique 24 h |
+|---|---|
+| ![Domotique](https://raw.githubusercontent.com/Mrt0t0/Minitel-HA/main/screen/v13-domotique.png) | ![Graphique](https://raw.githubusercontent.com/Mrt0t0/Minitel-HA/main/screen/v13-graphique.png) |
 
 ---
 
 ## Description
 
-Minitel-HA est une passerelle entre un **Minitel physique** (via ESP32/TelnetPro Iodeo ou Minimit) et **Home Assistant**. Il expose une interface Vidéotex complète accessible depuis :
+Minitel-HA est une passerelle entre un **Minitel physique** (via ESP32 / TelnetPro Iodeo ou Minimit) et **Home Assistant**. Le même service Vidéotex est accessible depuis :
 
-- 🟢 **Un vrai Minitel** connecté via ESP32 (port WebSocket `:3615`)
-- 🌐 **Un navigateur web** (émulateur HTML complet avec clavier virtuel port `:8080`)
+- 🟢 **un vrai Minitel** connecté par ESP32 (WebSocket, port `:3615`) ;
+- 🌐 **un navigateur web** : émulateur Minitel avec clavier virtuel (port `:8080`, ou barre latérale de HA avec l'add-on).
 
-Le serveur est écrit entièrement en Python natif (`aiohttp`, `websockets`, `pyyaml`) — aucune dépendance externe lourde. Le rendu HTML utilise Canvas API nativement — aucun framework JavaScript.
-
-Fonctionne largement sur une petite machine type Raspberry Pi.
+Le navigateur affiche exactement les mêmes pages que le Minitel : une seule logique, un seul rendu.
+Serveur en Python (`aiohttp`, `websockets`, `pyyaml`), émulateur en JavaScript natif (Canvas). Tourne sans difficulté sur un Raspberry Pi.
 
 ---
 
-## Nouveautés v1.2
+## Nouveautés v1.3
 
-| Domaine | Correction / amélioration |
+| Domaine | Nouveauté |
 |---|---|
-| **Sécurité** | `config.yaml` n'est plus versionné : partir de `config.example.yaml`. Add-on : `ha_token` facultatif (token Supervisor utilisé par défaut) |
-| **Minitel** | Lettre + ENVOI ouvrait toujours l'Assistant (le code de ENVOI était lu comme la lettre A) ; SUITE en Météo ouvrait l'Aide |
-| **Domotique** | Le numéro affiché désigne toujours l'appareil basculé, même avec des pièces absentes de `area_order` |
-| **Accents** | Accents envoyés en jeu G2 du Minitel (7 bits) : réponses de l'assistant lisibles, accents saisis au clavier transmis à HA |
-| **Affichage** | Horloge rafraîchie à sa place (elle s'ajoutait en fin de ligne) ; saisie conservée lors de l'auto-refresh ; plus de double affichage Menu → D |
-| **Archives** | Sélection par chiffre correcte à partir de la page 2 ; fichier supprimé pendant la lecture géré sans coupure |
-| **Navigateur** | Touches `*` (tout éteindre) et `0` (journal) actives ; `0` basculait un appareil de la page précédente. WebSocket compatible HTTPS / reverse proxy |
-| **Configuration** | `display.title` pris en compte, `page_size` borné à 1-9 ; `discover.py` conserve les personnalisations des capteurs (+ options `--dry` et `--force`) |
-| **Add-on** | Scènes, scripts, `quick_off`, `area_order` et capteurs météo configurables dans `/share/minitel-ha/config.yaml` ; `weather_entity` vide toléré |
+| **Temps réel** | Abonnement au WebSocket de Home Assistant : un changement d'état s'affiche immédiatement, seules les lignes concernées sont réécrites (le Minitel est à 1200 bauds). Repli automatique sur l'interrogation périodique |
+| **Sécurité** | Code d'accès facultatif (Minitel et navigateur), 3 essais par connexion, blocage de l'adresse IP après 5 échecs. Add-on : accès par la barre latérale de HA (ingress) sans code |
+| **Navigateur** | Véritable émulateur Minitel : pages identiques au Minitel, ligne 0, accents, curseur, double taille. Clavier physique et clavier virtuel (mobile) |
+| **Capteurs** | Nouveau mode `C` : valeurs par pièce, graphique 24 h en semi-graphique Vidéotex (`Chiffre + ENVOI`) |
+| **Appareils** | Volets, thermostats, lecteurs multimédia, serrures, ventilateurs. `SUITE` / `RETOUR` règlent l'appareil choisi (luminosité, position, consigne, volume) |
+| **Alertes** | Ligne 0 du Minitel : porte ouverte, seuil de température… (`alerts` dans la configuration) |
+| **Confirmations** | « Tout éteindre » (`*`) et le déverrouillage d'une serrure demandent `ENVOI` pour confirmer |
+| **Journal** | Conservé sur disque entre deux redémarrages |
+| **Langue** | Écrans en français ou en anglais (`display.language`) |
+| **Archives** | Dépôt de pages `.vdt` depuis le navigateur (bouton `.vdt ⇪`) |
+| **Qualité** | Une seule logique Minitel / navigateur, 36 tests automatiques, lint et CI GitHub Actions, image Docker construite |
 
-## Nouveautés v1.1
-
-| Domaine | Amélioration |
-|---|---|
-| **Installation** | Add-on Home Assistant officiel — installation en quelques clics, sans ligne de commande |
-| **Performance** | Un seul appel `GET /api/states` au lieu d'un par entité (51 requêtes → 1) + cache 2 s |
-| **API** | Routes `/api/archives/list` et `/api/archives/vdt/{nom}` (le lecteur .vdt du navigateur ne fonctionnait pas sans elles) |
-| **Modes** | Assistant IA, Archives et Aide générale désormais disponibles côté navigateur *et* Minitel |
-| **Vidéotex** | Séquences `ESC 0x58/0x59/0x5A/0x5C/0x5D/0x5F` conformes STUM1B, double hauteur ancrée en bas |
-| **Robustesse** | Clés YAML vides tolérées, arrêt propre, fermeture des sessions et timers |
-| **Sécurité** | Protection contre la traversée de répertoire sur `/api/archives/vdt/` |
+Historique complet : [CHANGELOG de l'add-on](https://github.com/Mrt0t0/Minitel-HA-addon/blob/main/minitel-ha/CHANGELOG.md).
 
 ---
 
 ## Fonctionnalités
 
-### Modes disponibles
+### Modes
+
 | Touche | Mode | Description |
-|--------|------|-------------|
-| `D` | **Domotique** | Contrôle ON/OFF des appareils par zone |
-| `M` | **Météo** | Prévisions + températures/humidité par pièce |
-| `S` | **Scènes** | Activation de scènes et scripts HA |
-| `J` | **Journal** | Historique des 50 dernières actions |
-| `A` | **Assistant** | IA conversationnelle Home Assistant (multi-agents) |
-| `R` | **Archives** | Pages Vidéotex statiques (.vdt) avec auto-rotation |
-| `H` | **Aide** | Guide d'utilisation intégré (7 pages) |
+|---|---|---|
+| `D` | **Domotique** | Appareils par pièce : bascule, réglages, état en temps réel |
+| `C` | **Capteurs** | Relevés par pièce et graphique 24 h |
+| `M` | **Météo** | Prévisions + températures / humidité par pièce |
+| `S` | **Scènes** | Scènes et scripts HA |
+| `J` | **Journal** | Dernières actions (conservées sur disque) |
+| `A` | **Assistant** | IA conversationnelle de Home Assistant (plusieurs agents) |
+| `R` | **Archives** | Pages Vidéotex `.vdt`, rotation automatique |
+| `H` | **Aide** | Guide intégré (8 pages) |
 
-### Navigation
-- `SOMMAIRE` → Menu principal depuis n'importe où
-- `GUIDE` → Aide contextuelle du mode actif
-- `SUITE` / `RETOUR` → Pagination
-- `Lettre + ENVOI` → Changer de mode
-- `1-9 + ENVOI` → Sélectionner/toggler un appareil
+### Touches
 
-### Émulateur navigateur
-- Splash screen animé 7 secondes
-- Clavier Minitel virtuel
-- Lecteur Vidéotex Canvas natif (G0 + G1 mosaïque + REP) (en Beta)
-- Reconnexion WebSocket automatique
+| Touche Minitel | Clavier du navigateur | Effet |
+|---|---|---|
+| Lettre | Lettre | Change de mode (depuis le menu et tous les modes sauf l'assistant) |
+| `SOMMAIRE` | `Échap` | Menu principal |
+| `GUIDE` | `F1` | Aide du mode en cours, puis aide générale |
+| `ENVOI` | `Entrée` | Valide (bascule, ouvre, envoie, confirme) |
+| `SUITE` / `RETOUR` | `→` / `←` | Page suivante / précédente, ou réglage +/− de l'appareil choisi |
+| `CORRECTION` | `Retour arrière` | Efface la saisie |
+| `ANNULATION` | `Suppr` | Annule / revient à la liste |
+| `REPETITION` | `F2` | Rafraîchit l'écran (assistant : nouvelle conversation) |
+
+En mode **Domotique** : `1`–`9` choisit un appareil, `ENVOI` le bascule, `SUITE` / `RETOUR` le règlent, `*` éteint tout, `0` ouvre le journal.
 
 ---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│  server.py ──── ws_minitel.py ─── ws://0.0.0.0:3615    │◄── Minitel + ESP32
-│       │    └─── ws_browser.py ─── http://0.0.0.0:8080  │◄── Navigateur
-│       │                                                  │
-│  ha_client.py ───────────────────────────────────────── │──► HA :8123 REST
-│  pagevideo.py  (rendu Vidéotex binaire)                  │
-│  utils.py      (logger centralisé)                       │
-│                                                          │
-│  static/archives/*.vdt  (pages Vidéotex locales)         │
-│  static/index.html      (émulateur Canvas HTML)          │
-└─────────────────────────────────────────────────────────┘
+            Minitel + ESP32 ──ws :3615──► ws_minitel.py ─┐
+ Navigateur (émulateur Canvas) ─ws :8080/ws─► ws_browser.py ─┤
+                                                             ▼
+                          session.py  (une session par terminal : modes, touches)
+                             │            │
+                     pagevideo.py     devices.py   (états, actions, réglages par type)
+                     (pages Vidéotex)     │
+                             │       hub.py  ◄── ha_live.py ◄── WebSocket HA (temps réel)
+                          i18n.py    (alertes,     ha_client.py ◄── API REST HA
+                                     code d'accès)
 ```
 
-**Fichiers du projet :**
 ```
-minitel-ha/
-├── server.py          # Orchestrateur principal
-├── ha_client.py       # Client REST Home Assistant
-├── pagevideo.py       # Rendu Vidéotex binaire
-├── ws_minitel.py      # Handler WebSocket Minitel (:3615)
-├── ws_browser.py      # Handler WebSocket navigateur (:8080)
-├── utils.py           # Logger centralisé
-├── pagehtml.py        # Injection port dans HTML
-├── discover.py        # Découverte automatique entités HA
-├── config.example.yaml # Modèle de configuration (copier en config.yaml)
-├── Dockerfile
-├── docker-compose.yml
-└── static/
-    ├── index.html     # Émulateur navigateur
-    └── archives/      # Pages .vdt (remplissage manuel)
+Minitel-HA/
+├── server.py            # Démarrage, routes HTTP (page, API archives)
+├── session.py           # Logique des modes, commune au Minitel et au navigateur
+├── hub.py               # Sessions ouvertes, temps réel, alertes, code d'accès
+├── pagevideo.py         # Pages Vidéotex (40 x 24 + ligne 0)
+├── devices.py           # Comportement par type d'entité
+├── ha_client.py         # API REST de Home Assistant
+├── ha_live.py           # WebSocket de Home Assistant (temps réel)
+├── alerts.py  journal.py  i18n.py  settings.py  utils.py  pagehtml.py
+├── ws_minitel.py        # Transport Minitel (:3615)
+├── ws_browser.py        # Transport navigateur (:8080/ws)
+├── discover.py          # Découverte des entités HA
+├── config.example.yaml  # Modèle de configuration
+├── static/index.html    # Émulateur Minitel
+├── tests/               # Tests (pytest) + faux Home Assistant (tests/fake_ha.py)
+└── tools/sync_addon.sh  # Copie du code vers le dépôt de l'add-on
 ```
 
 ---
 
 ## 🏠 Installation en add-on Home Assistant (recommandé)
 
-La façon la plus simple d'installer Minitel-HA : tout se fait depuis l'interface Home Assistant, aucune ligne de commande.
-
-### Prérequis
-- Home Assistant OS ou Supervised (avec support des add-ons)
-
-### Installation
-
-1. Dans Home Assistant : **Paramètres** → **Modules complémentaires** → **Boutique** → menu **⋮** → **Dépôts**
+1. **Paramètres** → **Modules complémentaires** → **Boutique** → menu **⋮** → **Dépôts**
 2. Ajouter : `https://github.com/Mrt0t0/Minitel-HA-addon`
-3. Installer **Minitel-HA** depuis la liste des add-ons
-4. Onglet **Configuration** : rien d'obligatoire. `ha_url` et `ha_token` ne servent que pour viser une autre instance HA (sinon le token Supervisor est utilisé)
-5. Onglet **Info** → **Démarrer**
-6. Accéder à l'émulateur : `http://[IP_HA]:8080`
-7. Minitel physique (ESP32/TelnetPro/Minimit) : `ws://[IP_HA]:3615`
+3. Installer **Minitel-HA**, puis **Démarrer** (aucune option obligatoire)
+4. Ouvrir **Minitel** dans la barre latérale de Home Assistant
+5. Minitel physique (ESP32 / TelnetPro / Minimit) : `ws://[IP_HA]:3615`
 
-### Découverte automatique des entités
-
-```bash
-docker exec addon_minitel_ha python3 /app/discover.py
-```
-
-Puis **redémarrer l'add-on** pour que les nouveaux appareils apparaissent. Le merge est non-destructif : vos personnalisations (`name`, `area`, `visible`) sont conservées.
-
-### Données persistantes
-
-Le dossier `/share/minitel-ha/` survit aux mises à jour de l'add-on :
-- `/share/minitel-ha/archives/` — déposez-y vos pages `.vdt`
-- `/share/minitel-ha/config.yaml` — appareils et capteurs découverts
-
-### Mise à jour
-Depuis **Paramètres** → **Modules complémentaires** → **Minitel-HA** → **Mettre à jour** (si une nouvelle version est disponible dans le dépôt).
+Au premier démarrage, les lampes et prises sont découvertes automatiquement. Le reste (scènes, alertes, capteurs météo, ordre des pièces…) se règle dans `/share/minitel-ha/config.yaml` : voir la [documentation de l'add-on](https://github.com/Mrt0t0/Minitel-HA-addon/blob/main/minitel-ha/DOCS.md).
 
 ---
 
-## 🐳 Installation Docker (avancé / hors Home Assistant)
+## 🐳 Installation Docker (hors Home Assistant)
 
-Pour héberger Minitel-HA sur une machine séparée de Home Assistant (serveur dédié, NAS, Raspberry Pi indépendant).
-
-### Prérequis
-- Docker + Docker Compose
-- Home Assistant accessible en réseau
-- Un token Long-Lived Access Token HA
-
-### Installation
+Prérequis : Docker + Docker Compose, Home Assistant joignable sur le réseau, un *Long-Lived Access Token* (Profil HA → Sécurité).
 
 ```bash
-# 1. Cloner le dépôt
 git clone https://github.com/Mrt0t0/Minitel-HA
 cd Minitel-HA
+cp config.example.yaml config.yaml   # config.yaml n'est pas versionné : il contient votre token
+nano config.yaml                      # URL de HA, token, réglages
 
-# 2. Configurer (config.yaml n'est pas versionné : il contient votre token)
-cp config.example.yaml config.yaml
-nano config.yaml  # Renseigner URL HA, token, entités
-
-# 3. Découverte automatique des entités HA (optionnel)
-docker compose run --rm minitel-ha python discover.py
-
-# 4. Lancer
-docker compose build   # Première fois
-docker compose up -d
-
-# 5. Accéder à l'émulateur
-open http://192.168.1.X:8080
-
-# 6. Accéder avec un Minitel (via ESP32/TelnetPro Iodeo ou Minimit)
-# Configurer l'ESP32 pour se connecter en WebSocket à ws://[IP_SERVEUR]:3615
-```
-
-### Mise à jour
-```bash
-cd Minitel-HA
-git pull
+docker compose run --rm minitel-ha python discover.py   # découverte des entités (facultatif)
 docker compose up -d --build
 ```
 
-### Logs
-```bash
-docker compose logs -f
-```
+- Émulateur : `http://[IP_SERVEUR]:8080`
+- Minitel : `ws://[IP_SERVEUR]:3615`
+- Mise à jour : `git pull && docker compose up -d --build`
+- Journaux : `docker compose logs -f`
+
+Le journal des actions est conservé dans `data/`, les pages `.vdt` dans `static/archives/`.
 
 ---
 
 ## Configuration (`config.yaml`)
 
+Le modèle complet et commenté est [`config.example.yaml`](config.example.yaml). Principales sections :
+
 ```yaml
 homeassistant:
-  url:   http://192.168.1.x:8123
-  token: eyJ...  # Home Assistant // Long-Lived Access Token HA
-
-server:
-  vt_port:   3615   # WebSocket Minitel/ESP32
-  http_port: 8080   # HTTP + WebSocket navigateur
+  url: http://192.168.1.x:8123
+  token: "VOTRE_TOKEN"
 
 display:
-  splash_seconds: 7  # Durée splash screen
+  language: fr              # fr | en (écrans et assistant)
+  page_size: 9              # appareils par page (1-9)
+  show_sensors: true        # mode Capteurs
 
-archives:
-  folder:      "static/archives"
-  auto_rotate: 30  # Rotation auto des .vdt (secondes)
+security:
+  access_code: "1234"       # facultatif : demandé sur le Minitel et le navigateur
 
-assistant:
-  language: "fr"
-  agents:
-    - id: "conversation.home_assistant"
-      name: "Assistant HA"
-    # - id: "conversation.groq"
-    #   name: "Groq"
+alerts:                     # ligne 0 du Minitel
+  - entity: binary_sensor.porte_entree
+    state: "on"
+    message: "Porte d'entrée ouverte"
+  - entity: sensor.salon_temperature
+    above: 28
+    message: "Salon trop chaud"
 
-meteo:
-  weather_entity: "weather.forecast_maison" # a adapter avec vos entités HA
+quick_off:                  # touche * en mode Domotique
+  entity: scene.tout_eteindre
+  name: "Tout éteindre"
+  confirm: true
+
+devices:                    # rempli par discover.py, modifiable à la main
+  - entity: cover.volet_salon
+    name: Volet salon
+    area: Salon
 ```
 
-### Découverte automatique des entités (installation Docker)
+Types d'appareils gérés : `light`, `switch`, `fan`, `input_boolean`, `automation`, `cover`, `climate`, `media_player`, `lock`, `scene`, `script`, `button` (et tout autre domaine via `homeassistant.toggle`).
+
+### Découverte des entités
+
 ```bash
-docker compose run --rm minitel-ha python discover.py
+python discover.py            # --dry : aperçu sans écrire ; --force : ignorer les personnalisations
 ```
-Le merge est non-destructif : vos personnalisations (`name`, `area`, `visible`) sont conservées.
+
+Les noms, pièces et visibilités modifiés à la main sont conservés ; les entités disparues de HA sont masquées (`visible: false`). Pour découvrir d'autres types, ajoutez-les à `discovery.domains`.
 
 ---
 
 ## 🔌 Connexion Minitel physique
 
-### Via ESP32 (TelnetPro Iodeo ou Minimit)
-Configurer l'ESP32 pour se connecter en WebSocket à `ws://[IP_SERVEUR]:3615`
+Configurer l'ESP32 pour se connecter en WebSocket à `ws://[IP_SERVEUR]:3615`.
 
-- Iodeo (Louis H) : https://iodeo.fr/
+- Iodeo (TelnetPro) : https://iodeo.fr/
 - Minimit : https://www.multiplie.fr/produit/minimit/
 
 ---
 
-## Pages Vidéotex (.vdt)
+## Pages Vidéotex (`.vdt`)
 
-Les fichiers `.vdt` (Vidéotex binaire) peuvent être placés dans `static/archives/` (Docker) ou `/share/minitel-ha/archives/` (add-on) et consultés depuis le mode `[R]` Archives.
+Déposez vos fichiers `.vdt` avec le bouton **`.vdt ⇪`** de l'émulateur, ou copiez-les dans `static/archives/` (Docker) ou `/share/minitel-ha/archives/` (add-on). Consultation depuis le mode `R`.
 
-**Sources de pages .vdt :** (Merci XReyRobert pour le travail)
-- Dépôt : [github.com/XReyRobert/VideotexPagesRepository](https://github.com/XReyRobert/VideotexPagesRepository)
-- Copier manuellement dans le dossier archives
+Sources de pages : [XReyRobert/VideotexPagesRepository](https://github.com/XReyRobert/VideotexPagesRepository) (merci XReyRobert).
 
----
-
-## Limitations connues
-
-- Le lecteur `.vdt` navigateur est en version bêta — les pages complexes peuvent présenter des imperfections de rendu.
-- Le rendu Minitel physique est plus fidèle à la norme Vidéotex.
+API HTTP (avec le code d'accès actif, en-tête `X-Minitel-Token` obtenu après saisie du code) :
+`GET /api/archives/list`, `GET /api/archives/vdt/{nom}`, `POST /api/archives/upload` (multipart, champ `file`, 512 Ko max par défaut).
 
 ---
 
-**Dépendances Python :** `aiohttp` `websockets` `pyyaml`
+## Développement
+
+```bash
+pip install -r requirements-dev.txt
+ruff check .
+pytest -q
+python tests/fake_ha.py 8123          # faux Home Assistant (token : test) pour essayer sans HA
+```
+
+Le code de l'add-on est une copie de ce dépôt : après modification, `tools/sync_addon.sh` met à jour `Minitel-HA-addon` (sa CI vérifie que les fichiers sont identiques à `main`).
 
 ---
 ---
@@ -275,290 +237,107 @@ Les fichiers `.vdt` (Vidéotex binaire) peuvent être placés dans `static/archi
 
 # Minitel-HA — 3615 MAISON
 
-**Control Home Assistant from a real Minitel terminal (or a web browser) using Videotex.**
+**Control Home Assistant from a real Minitel (or a web browser) through Videotex.**
 
-[![Version](https://img.shields.io/badge/version-1.2-green)](https://github.com/Mrt0t0/Minitel-HA)
-[![Python](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)
-[![Docker](https://img.shields.io/badge/docker-ready-blue)](https://www.docker.com/)
-[![License](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
-
----
+| Home control | 24h chart |
+|---|---|
+| ![Home control](https://raw.githubusercontent.com/Mrt0t0/Minitel-HA/main/screen/v13-domotique.png) | ![Chart](https://raw.githubusercontent.com/Mrt0t0/Minitel-HA/main/screen/v13-graphique.png) |
 
 ## Description
 
-Minitel-HA is a bridge between a **physical Minitel terminal** (through ESP32 / TelnetPro Iodeo or Minimit) and **Home Assistant**. It provides a full Videotex-style interface available from:
+Minitel-HA bridges a **physical Minitel** (through an ESP32 / TelnetPro Iodeo or Minimit) and **Home Assistant**. The same Videotex service is available from:
 
-- 🟢 **A real Minitel** connected through ESP32 (WebSocket port `:3615`)
-- 🌐 **A web browser** using a complete HTML emulator with a virtual keyboard (port `:8080`)
+- 🟢 **a real Minitel** connected through an ESP32 (WebSocket, port `:3615`);
+- 🌐 **a web browser**: Minitel emulator with a virtual keyboard (port `:8080`, or the HA sidebar with the add-on).
 
-The server is written in pure Python (`aiohttp`, `websockets`, `pyyaml`) with no heavy external dependency. The browser renderer uses the native Canvas API and no JavaScript framework.
+The browser shows exactly the same pages as the Minitel: one logic, one renderer.
 
-It runs well on small hardware such as a Raspberry Pi.
+## What's new in v1.3
 
----
-
-## What's new in v1.2
-
-| Area | Fix / improvement |
+| Area | New |
 |---|---|
-| **Security** | `config.yaml` is no longer tracked: start from `config.example.yaml`. Add-on: `ha_token` is optional (Supervisor token used by default) |
-| **Minitel** | Letter + ENVOI always opened the Assistant (the ENVOI code was read as the letter A); SUITE in Weather opened Help |
-| **Home control** | The number on screen always matches the toggled device, even with areas missing from `area_order` |
-| **Accents** | Accents sent with the Minitel G2 set (7-bit): assistant answers are readable, accents typed on the keyboard reach HA |
-| **Display** | Clock refreshed in place (it was appended at the end of the line); input kept on auto-refresh; no more double render Menu → D |
-| **Archives** | Digit selection works from page 2 on; a file deleted while viewing no longer drops the session |
-| **Browser** | `*` (all off) and `0` (journal) keys work; `0` used to toggle a device from the previous page. WebSocket works behind HTTPS / reverse proxy |
-| **Configuration** | `display.title` honoured, `page_size` clamped to 1-9; `discover.py` keeps sensor customisations (+ `--dry` and `--force` options) |
-| **Add-on** | Scenes, scripts, `quick_off`, `area_order` and weather sensors configurable in `/share/minitel-ha/config.yaml`; empty `weather_entity` tolerated |
+| **Real time** | Subscribes to the Home Assistant WebSocket: state changes show up immediately and only the affected lines are rewritten (the Minitel runs at 1200 baud). Falls back to polling automatically |
+| **Security** | Optional access code (Minitel and browser), 3 attempts per connection, IP blocked after 5 failures. Add-on: access through the HA sidebar (ingress) needs no code |
+| **Browser** | Real Minitel emulator: same pages as the Minitel, row 0, accents, cursor, double size. Physical and on-screen (mobile) keyboards |
+| **Sensors** | New `C` mode: values by room and a 24h Videotex semi-graphic chart (`Digit + ENVOI`) |
+| **Devices** | Covers, thermostats, media players, locks, fans. `SUITE` / `RETOUR` adjust the selected device (brightness, position, setpoint, volume) |
+| **Alerts** | Minitel row 0: door open, temperature threshold… (`alerts` in the configuration) |
+| **Confirmations** | "All off" (`*`) and unlocking a lock ask for `ENVOI` to confirm |
+| **Journal** | Kept on disk across restarts |
+| **Language** | Screens in French or English (`display.language`) |
+| **Archives** | Upload `.vdt` pages from the browser (`.vdt ⇪` button) |
+| **Quality** | One Minitel / browser logic, 36 automated tests, lint and GitHub Actions CI, Docker image built |
 
-## What's new in v1.1
+## Modes and keys
 
-| Area | Improvement |
+| Key | Mode |
 |---|---|
-| **Installation** | Official Home Assistant add-on — install in a few clicks, no command line needed |
-| **Performance** | Single `GET /api/states` call instead of one per entity (51 requests → 1) + 2 s cache |
-| **API** | `/api/archives/list` and `/api/archives/vdt/{name}` routes (the browser .vdt reader could not work without them) |
-| **Modes** | AI Assistant, Archives and general Help now available in the browser *and* on the Minitel |
-| **Videotex** | `ESC 0x58/0x59/0x5A/0x5C/0x5D/0x5F` sequences now match STUM1B, double-height anchored at the bottom |
-| **Robustness** | Empty YAML keys tolerated, clean shutdown, sessions and timers closed |
-| **Security** | Directory-traversal protection on `/api/archives/vdt/` |
+| `D` | Home control: toggle, adjust, live state |
+| `C` | Sensors: values and 24h chart |
+| `M` | Weather: forecast and rooms |
+| `S` | Scenes and scripts |
+| `J` | Journal |
+| `A` | Home Assistant AI assistant |
+| `R` | `.vdt` archives |
+| `H` | Help |
 
----
+| Minitel key | Browser keyboard | Effect |
+|---|---|---|
+| Letter | Letter | Change mode |
+| `SOMMAIRE` | `Esc` | Main menu |
+| `GUIDE` | `F1` | Help |
+| `ENVOI` | `Enter` | Confirm |
+| `SUITE` / `RETOUR` | `→` / `←` | Next / previous page, or adjust the selected device |
+| `CORRECTION` | `Backspace` | Erase |
+| `ANNULATION` | `Delete` | Cancel / back |
+| `REPETITION` | `F2` | Refresh (assistant: new conversation) |
 
-## Features
+## 🏠 Home Assistant add-on (recommended)
 
-### Available modes
+1. **Settings** → **Add-ons** → **Add-on store** → **⋮** → **Repositories**
+2. Add `https://github.com/Mrt0t0/Minitel-HA-addon`
+3. Install **Minitel-HA** and **Start** it (no option is required)
+4. Open **Minitel** in the Home Assistant sidebar
+5. Physical Minitel: `ws://[HA_IP]:3615`
 
-| Key | Mode | Description |
-|-----|------|-------------|
-| `D` | **Home control** | ON/OFF control of devices by area |
-| `M` | **Weather** | Forecast + room temperature/humidity |
-| `S` | **Scenes** | Trigger Home Assistant scenes and scripts |
-| `J` | **Logbook** | History of the last 50 actions |
-| `A` | **Assistant** | Home Assistant conversational AI (multi-agent) |
-| `R` | **Archives** | Static Videotex pages (`.vdt`) with auto-rotation |
-| `H` | **Help** | Built-in usage guide (7 pages) |
+See the [add-on documentation](https://github.com/Mrt0t0/Minitel-HA-addon/blob/main/minitel-ha/DOCS.md) for scenes, alerts and the other settings.
 
-### Navigation
-
-- `SOMMAIRE` → Main menu from anywhere
-- `GUIDE` → Context help for the active mode
-- `SUITE` / `RETOUR` → Pagination
-- `Letter + ENVOI` → Switch mode
-- `1-9 + ENVOI` → Select / toggle a device
-
-### Browser emulator
-
-- 7-second animated splash screen
-- Virtual Minitel keyboard
-- Native Canvas Videotex renderer (G0 + G1 mosaic + REP) (Beta)
-- Automatic WebSocket reconnection
-
----
-
-## Architecture
-
-```text
-┌─────────────────────────────────────────────────────────┐
-│  server.py ──── ws_minitel.py ─── ws://0.0.0.0:3615     │◄── Minitel + ESP32
-│       │    └─── ws_browser.py ─── http://0.0.0.0:8080   │◄── Browser
-│       │                                                  │
-│  ha_client.py ───────────────────────────────────────── │──► HA :8123 REST
-│  pagevideo.py  (binary Videotex rendering)               │
-│  utils.py      (central logger)                          │
-│                                                          │
-│  static/archives/*.vdt  (local Videotex pages)           │
-│  static/index.html      (HTML Canvas emulator)           │
-└─────────────────────────────────────────────────────────┘
-```
-
-**Project files:**
-
-```text
-minitel-ha/
-├── server.py
-├── ha_client.py
-├── pagevideo.py
-├── ws_minitel.py
-├── ws_browser.py
-├── utils.py
-├── pagehtml.py
-├── discover.py
-├── config.example.yaml
-├── Dockerfile
-├── docker-compose.yml
-└── static/
-    ├── index.html
-    └── archives/
-```
-
----
-
-## 🏠 Home Assistant add-on installation (recommended)
-
-The simplest way to install Minitel-HA: everything happens from the Home Assistant UI, no command line needed.
-
-### Requirements
-- Home Assistant OS or Supervised (with add-on support)
-
-### Installation
-
-1. In Home Assistant: **Settings** → **Add-ons** → **Add-on store** → **⋮** → **Repositories**
-2. Add: `https://github.com/Mrt0t0/Minitel-HA-addon`
-3. Install **Minitel-HA** from the add-on list
-4. **Configuration** tab: nothing required. `ha_url` and `ha_token` are only needed to target another HA instance (otherwise the Supervisor token is used)
-5. **Info** tab → **Start**
-6. Open the browser emulator: `http://[HA_IP]:8080`
-7. Physical Minitel (ESP32/TelnetPro/Minimit): `ws://[HA_IP]:3615`
-
-### Entity auto-discovery
+## 🐳 Docker (outside Home Assistant)
 
 ```bash
-docker exec addon_minitel_ha python3 /app/discover.py
-```
-
-Then **restart the add-on** for new devices to appear. The merge is non-destructive: your custom values (`name`, `area`, `visible`) are preserved.
-
-### Persistent data
-
-`/share/minitel-ha/` survives add-on updates:
-- `/share/minitel-ha/archives/` — drop your `.vdt` pages here
-- `/share/minitel-ha/config.yaml` — discovered devices and sensors
-
-### Update
-From **Settings** → **Add-ons** → **Minitel-HA** → **Update** (when a new version is available in the repository).
-
----
-
-## 🐳 Docker installation (advanced / outside Home Assistant)
-
-For hosting Minitel-HA on a machine separate from Home Assistant (dedicated server, NAS, standalone Raspberry Pi).
-
-### Requirements
-
-- Docker + Docker Compose
-- A reachable Home Assistant instance
-- A Home Assistant Long-Lived Access Token
-
-### Installation
-
-```bash
-# 1. Clone the repository
 git clone https://github.com/Mrt0t0/Minitel-HA
 cd Minitel-HA
-
-# 2. Configure (config.yaml is not tracked: it holds your token)
-cp config.example.yaml config.yaml
+cp config.example.yaml config.yaml   # config.yaml is not tracked: it holds your token
 nano config.yaml
-
-# 3. Auto-discover Home Assistant entities (optional)
-docker compose run --rm minitel-ha python discover.py
-
-# 4. Start
-docker compose build
-docker compose up -d
-
-# 5. Open the browser emulator
-# Open in your browser:
-http://192.168.1.X:8080
-
-# 6. Connect a real Minitel (via ESP32 / TelnetPro Iodeo / Minimit)
-# Configure the ESP32 to connect to:
-ws://[SERVER_IP]:3615
-```
-
-### Update
-
-```bash
-cd Minitel-HA
-git pull
+docker compose run --rm minitel-ha python discover.py   # optional entity discovery
 docker compose up -d --build
 ```
 
-### Logs
+Emulator: `http://[SERVER_IP]:8080` — Minitel: `ws://[SERVER_IP]:3615` — Update: `git pull && docker compose up -d --build`.
 
-```bash
-docker compose logs -f
-```
+## Configuration
 
----
-
-## Configuration (`config.yaml`)
-
-```yaml
-homeassistant:
-  url:   http://192.168.1.x:8123
-  token: eyJ...
-
-server:
-  vt_port:   3615
-  http_port: 8080
-
-display:
-  splash_seconds: 7
-
-archives:
-  folder: "static/archives"
-  auto_rotate: 30
-
-assistant:
-  language: "fr"
-  agents:
-    - id: "conversation.home_assistant"
-      name: "Assistant HA"
-
-meteo:
-  weather_entity: "weather.forecast_maison"
-```
-
-### Entity auto-discovery (Docker install)
-
-```bash
-docker compose run --rm minitel-ha python discover.py
-```
-
-The merge is non-destructive: your custom values such as `name`, `area`, and `visible` are preserved.
-
----
+See the commented [`config.example.yaml`](config.example.yaml): `display.language`, `security.access_code`, `alerts`, `quick_off.confirm`, `devices`, `sensors`, `meteo`, `assistant`, `archives`, `journal`.
+`python discover.py` (`--dry`, `--force`) fills `devices` and `sensors` and keeps your customisations.
 
 ## Physical Minitel connection
 
-### Via ESP32 (TelnetPro Iodeo or Minimit)
-
-Configure the ESP32 to connect through WebSocket to:
-
-```text
-ws://[SERVER_IP]:3615
-```
-
-Useful links:
-- Iodeo: https://iodeo.fr/
-- Minimit: https://www.multiplie.fr/produit/minimit/
-
----
+Configure the ESP32 to connect through WebSocket to `ws://[SERVER_IP]:3615` — [Iodeo](https://iodeo.fr/), [Minimit](https://www.multiplie.fr/produit/minimit/).
 
 ## Videotex pages (`.vdt`)
 
-Binary Videotex files (`.vdt`) can be placed in `static/archives/` (Docker) or `/share/minitel-ha/archives/` (add-on) and viewed from the `[R]` Archives mode.
+Upload them with the emulator's **`.vdt ⇪`** button or copy them into `static/archives/` (Docker) or `/share/minitel-ha/archives/` (add-on). Sources: [XReyRobert/VideotexPagesRepository](https://github.com/XReyRobert/VideotexPagesRepository).
 
-**Sources for `.vdt` pages:**
-- Repository: https://github.com/XReyRobert/VideotexPagesRepository
-- Copy files manually into the archives folder
+## Development
 
----
+```bash
+pip install -r requirements-dev.txt
+ruff check . && pytest -q
+python tests/fake_ha.py 8123          # fake Home Assistant (token: test)
+```
 
-## Known limitations
-
-- The browser-side `.vdt` renderer is still under active work.
-- Some complex Videotex pages may render imperfectly depending on attributes and layout.
-- Physical Minitel output is currently more reliable than the browser emulator for strict Videotex fidelity.
+The add-on code is a copy of this repository: run `tools/sync_addon.sh` after a change (the add-on CI checks the files match `main`).
 
 ---
 
 **Python dependencies:** `aiohttp` `websockets` `pyyaml`
-
----
-
-*Minitel-HA 3615 MAISON — Home Assistant automation through Minitel*
-
-*Minitel-HA 3615 MAISON — Domotique Home Assistant par Minitel*

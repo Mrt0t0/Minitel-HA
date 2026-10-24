@@ -1,102 +1,76 @@
 #!/usr/bin/env python3
+"""Minitel-HA : 3615 MAISON.
+
+- ws://:3615   Minitel physique (ESP32 / TelnetPro / Minimit)
+- http://:8080 emulateur Minitel dans le navigateur + API des archives .vdt
+"""
 import asyncio
-import yaml
+import os
+import re
+from pathlib import Path
+from urllib.parse import unquote
+
 import aiohttp
 import websockets
-from pathlib import Path
 from aiohttp import web
 
+import alerts
 import ha_client as HA
-import pagevideo as P
+import ha_live
+import hub
+import i18n
+import journal
 import pagehtml
-import ws_minitel as WM
+import pagevideo as P
+import settings
 import ws_browser as WB
+import ws_minitel as WM
 from utils import log
 
 BASE = Path(__file__).parent
 
-with open(BASE / 'config.yaml', encoding='utf-8') as f:
-    cfg = yaml.safe_load(f) or {}
+_VDT_NAME = re.compile(r'[\w][\w .-]{0,59}')
 
 
-def _get(section, key, default=None):
-    """Lecture robuste : une cle presente mais vide vaut None en YAML."""
-    sec = cfg.get(section) or {}
-    val = sec.get(key, default)
-    return default if val is None else val
+def configure(cfg):
+    """Applique la configuration aux modules (sans demarrer de serveur)."""
+    disp = cfg['display']
+    P.CFG.update(title=disp['title'], page_size=disp['page_size'],
+                 date_format=disp['date_format'], splash_seconds=disp['splash_seconds'])
+    i18n.set_lang(disp['language'])
+    HA.configure(cfg['ha']['url'], cfg['ha']['token'])
+    journal.configure(cfg['journal']['file'], cfg['journal']['size'])
+    alerts.configure(cfg['alerts'])
+    cfg['archives']['folder'].mkdir(parents=True, exist_ok=True)
+    pagehtml.load(disp['language'], P.VERSION)
 
 
-HA_URL  = _get('homeassistant', 'url', '')
-HA_TOK  = _get('homeassistant', 'token', '')
-VT_PORT = int(_get('server', 'vt_port', 3615))
-WB_PORT = int(_get('server', 'http_port', 8080))
+# ------------------------------------------------------------------ HTTP
 
-if not HA_URL or not HA_TOK:
-    log('ERR', 'config.yaml : homeassistant.url et .token sont obligatoires')
-    raise SystemExit(1)
-
-P.CFG['title']          = str(_get('display', 'title', P.CFG['title']))
-P.CFG['page_size']      = max(1, min(9, int(_get('display', 'page_size', 9))))
-P.CFG['date_format']    = _get('display', 'date_format', '%H:%M')
-P.CFG['show_sensors']   = bool(_get('display', 'show_sensors', True))
-P.CFG['splash_seconds'] = int(_get('display', 'splash_seconds', 7))
-P.PAGE_SIZE             = P.CFG['page_size']
-
-REFRESH_AUTO = int(_get('display', 'refresh_auto', 30))
-AREA_ORDER   = cfg.get('area_order') or None
-
-ARCHIVES_CFG    = cfg.get('archives') or {}
-ARCHIVES_FOLDER = (BASE / ARCHIVES_CFG.get('folder', 'static/archives')).resolve()
-ARCHIVES_FOLDER.mkdir(parents=True, exist_ok=True)
-
-HA.configure(HA_URL, HA_TOK)
-pagehtml.load(WB_PORT)
+def _authorized(request):
+    if not hub.code_required() or WB.is_trusted(request):
+        return True
+    tok = request.headers.get('X-Minitel-Token') or request.query.get('token')
+    return hub.token_valid(tok)
 
 
-def _sort_devices(raw):
-    """Trie les appareils dans l'ordre exact de pagevideo.group_by_area :
-    le numero affiche a l'ecran doit designer l'appareil bascule."""
-    if not AREA_ORDER:
-        return sorted(raw, key=lambda d: d.get('area', 'Autres'))
-    order = list(AREA_ORDER)
-    for d in raw:
-        if d.get('area', 'Autres') not in order:
-            order.append(d.get('area', 'Autres'))
-    return sorted(raw, key=lambda d: order.index(d.get('area', 'Autres')))
+def protected(handler):
+    async def wrapper(request):
+        if not _authorized(request):
+            raise web.HTTPUnauthorized(text='code d\'acces requis')
+        return await handler(request)
+    return wrapper
 
 
-_devices = [d for d in (cfg.get('devices') or []) if d.get('visible', True)]
-_sensors = [s for s in (cfg.get('sensors') or []) if s.get('visible', True)]
-
-_assistant = cfg.get('assistant') or {}
-if not _assistant.get('agents'):
-    _assistant['agents'] = [{'id': 'conversation.home_assistant',
-                             'name': 'Assistant HA'}]
-
-_cfg_shared = {
-    'devices':    _sort_devices(_devices),
-    'sensors':    _sensors,
-    'scenes':     cfg.get('scenes') or [],
-    'scripts':    cfg.get('scripts') or [],
-    'quick_off':  cfg.get('quick_off'),
-    'meteo':      cfg.get('meteo') or {},
-    'assistant':  _assistant,
-    'archives':   ARCHIVES_CFG,
-    'area_order': AREA_ORDER,
-    '_base':      str(BASE),
-}
-
-WM.configure(_cfg_shared)
-WB.configure(_cfg_shared)
+def _folder():
+    return hub.cfg['archives']['folder']
 
 
 def list_vdt():
     try:
-        return sorted(
-            ({'name': f.stem, 'size': f.stat().st_size}
-             for f in ARCHIVES_FOLDER.glob('*.vdt')),
-            key=lambda x: x['name'])
-    except Exception as e:
+        return sorted(({'name': f.stem, 'size': f.stat().st_size}
+                       for f in _folder().glob('*.vdt')), key=lambda x: x['name'])
+    except OSError as e:
         log('ERR', f'list_vdt: {e}')
         return []
 
@@ -105,65 +79,106 @@ async def http_index(request):
     return web.Response(text=pagehtml.get(), content_type='text/html')
 
 
+@protected
 async def api_archives_list(request):
     files = list_vdt()
-    return web.json_response({
-        'files':       files,
-        'total':       len(files),
-        'auto_rotate': int(ARCHIVES_CFG.get('auto_rotate', 30) or 0),
-    })
+    return web.json_response({'files': files, 'total': len(files),
+                              'auto_rotate': hub.cfg['archives']['auto_rotate']})
 
 
+@protected
 async def api_archives_vdt(request):
     name = request.match_info.get('name', '')
     if name.lower().endswith('.vdt'):
         name = name[:-4]
-    target = (ARCHIVES_FOLDER / f'{name}.vdt').resolve()
+    target = (_folder() / f'{name}.vdt').resolve()
     # Empeche toute traversee de repertoire (../)
-    if ARCHIVES_FOLDER not in target.parents or not target.is_file():
+    if _folder() not in target.parents or not target.is_file():
         raise web.HTTPNotFound(text='fichier .vdt introuvable')
-    return web.Response(body=target.read_bytes(),
-                        content_type='application/octet-stream')
+    return web.Response(body=target.read_bytes(), content_type='application/octet-stream')
 
 
-async def main():
-    log('CFG', f'{len(_cfg_shared["devices"])} appareils | '
-               f'{len(_cfg_shared["sensors"])} capteurs')
-    log('CFG', f'{len(_cfg_shared["scenes"])} scenes | '
-               f'{len(_cfg_shared["scripts"])} scripts | '
-               f'{len(list_vdt())} pages .vdt')
-    log('SRV', f'3615 MAISON -> ws://0.0.0.0:{VT_PORT}')
-    log('SRV', f'Browser     -> http://0.0.0.0:{WB_PORT}')
-    log('SRV', f'HA          -> {HA_URL}')
+@protected
+async def api_archives_upload(request):
+    """Depot d'une page .vdt (formulaire multipart, champ `file`)."""
+    try:
+        reader = await request.multipart()
+        field = await reader.next()
+    except (AssertionError, ValueError) as e:
+        raise web.HTTPBadRequest(text='formulaire multipart attendu') from e
+    if field is None or field.name != 'file':
+        raise web.HTTPBadRequest(text='champ "file" manquant')
+    # Certains clients encodent le nom (Ma%20page.vdt)
+    name = Path(unquote(field.filename or '')).name
+    if not name.lower().endswith('.vdt') or not _VDT_NAME.fullmatch(name[:-4]):
+        raise web.HTTPBadRequest(text='nom invalide (lettres, chiffres, espace . _ - ; .vdt)')
+    limit = hub.cfg['archives']['max_upload_kb'] * 1024
+    data = bytearray()
+    while chunk := await field.read_chunk():
+        data += chunk
+        if len(data) > limit:
+            raise web.HTTPRequestEntityTooLarge(max_size=limit, actual_size=len(data))
+    if not data:
+        raise web.HTTPBadRequest(text='fichier vide')
+    target = _folder() / f'{name[:-4]}.vdt'
+    tmp = target.with_suffix('.part')
+    tmp.write_bytes(bytes(data))
+    os.replace(tmp, target)
+    log('SRV', f'archive deposee : {target.name} ({len(data)} octets) par {request.remote}')
+    return web.json_response({'ok': True, 'name': target.stem, 'size': len(data)})
 
-    # Session HTTP unique partagee par toutes les taches de fond
-    session = aiohttp.ClientSession()
-    WM.set_session(session)
 
+def create_app():
     app = web.Application()
-    app.router.add_get('/',                        http_index)
-    app.router.add_get('/ws',                      WB.browser_ws_handler)
-    app.router.add_get('/api/archives/list',       api_archives_list)
-    app.router.add_get('/api/archives/vdt/{name}', api_archives_vdt)
-    app.router.add_static('/static/', BASE / 'static')
+    app.router.add_get('/',                          http_index)
+    app.router.add_get('/ws',                        WB.browser_ws_handler)
+    app.router.add_get('/api/archives/list',         api_archives_list)
+    app.router.add_get('/api/archives/vdt/{name}',   api_archives_vdt)
+    app.router.add_post('/api/archives/upload',      api_archives_upload)
+    return app
 
-    runner = web.AppRunner(app)
+
+# ------------------------------------------------------------------ demarrage
+
+async def main(cfg):
+    srv = cfg['server']
+    log('CFG', f'{len(cfg["devices"])} appareils | {len(cfg["sensors"])} capteurs | '
+               f'{len(cfg["alerts"])} alertes')
+    log('CFG', f'{len(cfg["scenes"])} scenes | {len(cfg["scripts"])} scripts | '
+               f'{len(list(cfg["archives"]["folder"].glob("*.vdt")))} pages .vdt | '
+               f'langue {cfg["display"]["language"]}')
+    log('CFG', 'code d\'acces : ' + ('actif' if cfg['security']['access_code'] else 'aucun'))
+    log('SRV', f'3615 MAISON -> ws://0.0.0.0:{srv["vt_port"]}')
+    log('SRV', f'Navigateur  -> http://0.0.0.0:{srv["http_port"]}')
+    log('SRV', f'HA          -> {cfg["ha"]["url"]}')
+
+    # Session HTTP unique pour tous les appels a Home Assistant
+    http = aiohttp.ClientSession()
+    hub.setup(cfg, http)
+
+    runner = web.AppRunner(create_app())
     await runner.setup()
-    await web.TCPSite(runner, '0.0.0.0', WB_PORT).start()
+    await web.TCPSite(runner, '0.0.0.0', srv['http_port']).start()
 
     try:
-        async with websockets.serve(WM.vt_ws_handler, '0.0.0.0', VT_PORT):
+        async with websockets.serve(WM.vt_ws_handler, '0.0.0.0', srv['vt_port']):
             await asyncio.gather(
-                WM.auto_refresh(REFRESH_AUTO),
-                WM.clock_update(),
+                ha_live.run(http, cfg['ha']['url'], cfg['ha']['token'], hub.notify),
+                hub.refresh_loop(cfg['display']['refresh_auto']),
+                hub.clock_loop(),
             )
     finally:
-        await session.close()
+        await http.close()
         await runner.cleanup()
 
 
 if __name__ == '__main__':
+    config = settings.load(Path(os.environ.get('MINITEL_CONFIG', BASE / 'config.yaml')))
+    if not config['ha']['url'] or not config['ha']['token']:
+        log('ERR', 'config.yaml : homeassistant.url et .token sont obligatoires')
+        raise SystemExit(1)
+    configure(config)
     try:
-        asyncio.run(main())
+        asyncio.run(main(config))
     except KeyboardInterrupt:
         log('SRV', 'arret demande')

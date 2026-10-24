@@ -1,14 +1,12 @@
 services:
   minitel-ha:
-    image: python:3.12-slim
+    build: .
     container_name: minitel-ha
-    working_dir: /app
-    volumes:
-      - .:/app
     ports:
-      - "3615:3615"
-      - "8080:8080"
-    command: >
-      sh -c "pip install aiohttp websockets pyyaml --quiet &&
-             python server.py"
+      - "3615:3615"   # Minitel (ESP32 / TelnetPro / Minimit)
+      - "8080:8080"   # emulateur navigateur
+    volumes:
+      - ./config.yaml:/app/config.yaml          # cree avant : cp config.example.yaml config.yaml
+      - ./static/archives:/app/static/archives  # pages .vdt
+      - ./data:/app/data                        # journal des actions
     restart: unless-stopped

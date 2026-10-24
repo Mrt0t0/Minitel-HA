@@ -18,6 +18,10 @@ display:
   date_format: "%H:%M"         # ou "%d/%m %H:%M"
   show_sensors: true
   splash_seconds: 7            # duree du splash screen (0 = desactive)
+  language: fr                 # fr | en : langue des ecrans (et de l'assistant)
+
+security:
+  access_code: ""              # ex. "1234" : code demande sur le Minitel et le navigateur
 
 area_order:                    # ordre d'affichage des pieces
   - Salon
@@ -38,6 +42,15 @@ scripts:
 quick_off:                     # touche * en mode Domotique
   entity: scene.tout_eteindre
   name: "Tout eteindre"
+  confirm: true                # demande ENVOI pour confirmer
+
+alerts:                        # affichees sur la ligne 0 du Minitel
+  - entity: binary_sensor.porte_entree
+    state: "on"                # un etat ou une liste d'etats
+    message: "Porte d'entree ouverte"
+  - entity: sensor.salon_temperature
+    above: 28                  # ou below: pour un seuil bas
+    message: "Salon trop chaud"
 
 meteo:
   weather_entity: weather.forecast_maison
@@ -58,8 +71,14 @@ assistant:
 archives:
   folder: static/archives      # pages Videotex .vdt
   auto_rotate: 30              # secondes (0 = pas de rotation)
+  max_upload_kb: 512           # taille max d'une page deposee depuis le navigateur
+
+journal:
+  file: data/journal.json      # conserve entre deux redemarrages
+  size: 50                     # nombre d'actions gardees
 
 discovery:                     # utilise par discover.py
+  # autres types possibles : cover, climate, lock, media_player, fan
   domains: [light, switch]
   sensor_classes: [temperature, humidity]
   exclude_keywords: [_energy, _power, _current, _voltage, _rssi, _wifi]
@@ -72,6 +91,9 @@ devices:
     area: Salon
     icon: light
     visible: true
+  - entity: cover.volet_salon  # SUITE / RETOUR reglent la position
+    name: Volet salon
+    area: Salon
 
 sensors:
   - entity: sensor.salon_temperature
