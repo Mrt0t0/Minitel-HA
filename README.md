@@ -4,7 +4,7 @@
 
 **Contrôlez Home Assistant depuis un vrai Minitel (ou un navigateur web) en Vidéotex.**
 
-[![Version](https://img.shields.io/badge/version-1.1-green)](https://github.com/Mrt0t0/Minitel-HA)
+[![Version](https://img.shields.io/badge/version-1.2-green)](https://github.com/Mrt0t0/Minitel-HA)
 [![Python](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)
 [![Docker](https://img.shields.io/badge/docker-ready-blue)](https://www.docker.com/)
 [![License](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
@@ -23,6 +23,20 @@ Le serveur est écrit entièrement en Python natif (`aiohttp`, `websockets`, `py
 Fonctionne largement sur une petite machine type Raspberry Pi.
 
 ---
+
+## Nouveautés v1.2
+
+| Domaine | Correction / amélioration |
+|---|---|
+| **Sécurité** | `config.yaml` n'est plus versionné : partir de `config.example.yaml`. Add-on : `ha_token` facultatif (token Supervisor utilisé par défaut) |
+| **Minitel** | Lettre + ENVOI ouvrait toujours l'Assistant (le code de ENVOI était lu comme la lettre A) ; SUITE en Météo ouvrait l'Aide |
+| **Domotique** | Le numéro affiché désigne toujours l'appareil basculé, même avec des pièces absentes de `area_order` |
+| **Accents** | Accents envoyés en jeu G2 du Minitel (7 bits) : réponses de l'assistant lisibles, accents saisis au clavier transmis à HA |
+| **Affichage** | Horloge rafraîchie à sa place (elle s'ajoutait en fin de ligne) ; saisie conservée lors de l'auto-refresh ; plus de double affichage Menu → D |
+| **Archives** | Sélection par chiffre correcte à partir de la page 2 ; fichier supprimé pendant la lecture géré sans coupure |
+| **Navigateur** | Touches `*` (tout éteindre) et `0` (journal) actives ; `0` basculait un appareil de la page précédente. WebSocket compatible HTTPS / reverse proxy |
+| **Configuration** | `display.title` pris en compte, `page_size` borné à 1-9 ; `discover.py` conserve les personnalisations des capteurs (+ options `--dry` et `--force`) |
+| **Add-on** | Scènes, scripts, `quick_off`, `area_order` et capteurs météo configurables dans `/share/minitel-ha/config.yaml` ; `weather_entity` vide toléré |
 
 ## Nouveautés v1.1
 
@@ -93,7 +107,7 @@ minitel-ha/
 ├── utils.py           # Logger centralisé
 ├── pagehtml.py        # Injection port dans HTML
 ├── discover.py        # Découverte automatique entités HA
-├── config.yaml        # Configuration principale
+├── config.example.yaml # Modèle de configuration (copier en config.yaml)
 ├── Dockerfile
 ├── docker-compose.yml
 └── static/
@@ -109,14 +123,13 @@ La façon la plus simple d'installer Minitel-HA : tout se fait depuis l'interfac
 
 ### Prérequis
 - Home Assistant OS ou Supervised (avec support des add-ons)
-- Un token Long-Lived Access Token HA
 
 ### Installation
 
 1. Dans Home Assistant : **Paramètres** → **Modules complémentaires** → **Boutique** → menu **⋮** → **Dépôts**
 2. Ajouter : `https://github.com/Mrt0t0/Minitel-HA-addon`
 3. Installer **Minitel-HA** depuis la liste des add-ons
-4. Onglet **Configuration** : renseigner `ha_url` (ex. `http://homeassistant.local:8123`) et `ha_token`
+4. Onglet **Configuration** : rien d'obligatoire. `ha_url` et `ha_token` ne servent que pour viser une autre instance HA (sinon le token Supervisor est utilisé)
 5. Onglet **Info** → **Démarrer**
 6. Accéder à l'émulateur : `http://[IP_HA]:8080`
 7. Minitel physique (ESP32/TelnetPro/Minimit) : `ws://[IP_HA]:3615`
@@ -156,7 +169,8 @@ Pour héberger Minitel-HA sur une machine séparée de Home Assistant (serveur d
 git clone https://github.com/Mrt0t0/Minitel-HA
 cd Minitel-HA
 
-# 2. Configurer
+# 2. Configurer (config.yaml n'est pas versionné : il contient votre token)
+cp config.example.yaml config.yaml
 nano config.yaml  # Renseigner URL HA, token, entités
 
 # 3. Découverte automatique des entités HA (optionnel)
@@ -263,7 +277,7 @@ Les fichiers `.vdt` (Vidéotex binaire) peuvent être placés dans `static/archi
 
 **Control Home Assistant from a real Minitel terminal (or a web browser) using Videotex.**
 
-[![Version](https://img.shields.io/badge/version-1.1-green)](https://github.com/Mrt0t0/Minitel-HA)
+[![Version](https://img.shields.io/badge/version-1.2-green)](https://github.com/Mrt0t0/Minitel-HA)
 [![Python](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)
 [![Docker](https://img.shields.io/badge/docker-ready-blue)](https://www.docker.com/)
 [![License](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
@@ -282,6 +296,20 @@ The server is written in pure Python (`aiohttp`, `websockets`, `pyyaml`) with no
 It runs well on small hardware such as a Raspberry Pi.
 
 ---
+
+## What's new in v1.2
+
+| Area | Fix / improvement |
+|---|---|
+| **Security** | `config.yaml` is no longer tracked: start from `config.example.yaml`. Add-on: `ha_token` is optional (Supervisor token used by default) |
+| **Minitel** | Letter + ENVOI always opened the Assistant (the ENVOI code was read as the letter A); SUITE in Weather opened Help |
+| **Home control** | The number on screen always matches the toggled device, even with areas missing from `area_order` |
+| **Accents** | Accents sent with the Minitel G2 set (7-bit): assistant answers are readable, accents typed on the keyboard reach HA |
+| **Display** | Clock refreshed in place (it was appended at the end of the line); input kept on auto-refresh; no more double render Menu → D |
+| **Archives** | Digit selection works from page 2 on; a file deleted while viewing no longer drops the session |
+| **Browser** | `*` (all off) and `0` (journal) keys work; `0` used to toggle a device from the previous page. WebSocket works behind HTTPS / reverse proxy |
+| **Configuration** | `display.title` honoured, `page_size` clamped to 1-9; `discover.py` keeps sensor customisations (+ `--dry` and `--force` options) |
+| **Add-on** | Scenes, scripts, `quick_off`, `area_order` and weather sensors configurable in `/share/minitel-ha/config.yaml`; empty `weather_entity` tolerated |
 
 ## What's new in v1.1
 
@@ -356,7 +384,7 @@ minitel-ha/
 ├── utils.py
 ├── pagehtml.py
 ├── discover.py
-├── config.yaml
+├── config.example.yaml
 ├── Dockerfile
 ├── docker-compose.yml
 └── static/
@@ -372,14 +400,13 @@ The simplest way to install Minitel-HA: everything happens from the Home Assista
 
 ### Requirements
 - Home Assistant OS or Supervised (with add-on support)
-- A Home Assistant Long-Lived Access Token
 
 ### Installation
 
 1. In Home Assistant: **Settings** → **Add-ons** → **Add-on store** → **⋮** → **Repositories**
 2. Add: `https://github.com/Mrt0t0/Minitel-HA-addon`
 3. Install **Minitel-HA** from the add-on list
-4. **Configuration** tab: set `ha_url` (e.g. `http://homeassistant.local:8123`) and `ha_token`
+4. **Configuration** tab: nothing required. `ha_url` and `ha_token` are only needed to target another HA instance (otherwise the Supervisor token is used)
 5. **Info** tab → **Start**
 6. Open the browser emulator: `http://[HA_IP]:8080`
 7. Physical Minitel (ESP32/TelnetPro/Minimit): `ws://[HA_IP]:3615`
@@ -420,7 +447,8 @@ For hosting Minitel-HA on a machine separate from Home Assistant (dedicated serv
 git clone https://github.com/Mrt0t0/Minitel-HA
 cd Minitel-HA
 
-# 2. Configure
+# 2. Configure (config.yaml is not tracked: it holds your token)
+cp config.example.yaml config.yaml
 nano config.yaml
 
 # 3. Auto-discover Home Assistant entities (optional)

@@ -35,7 +35,8 @@ if not HA_URL or not HA_TOK:
     log('ERR', 'config.yaml : homeassistant.url et .token sont obligatoires')
     raise SystemExit(1)
 
-P.CFG['page_size']      = int(_get('display', 'page_size', 9))
+P.CFG['title']          = str(_get('display', 'title', P.CFG['title']))
+P.CFG['page_size']      = max(1, min(9, int(_get('display', 'page_size', 9))))
 P.CFG['date_format']    = _get('display', 'date_format', '%H:%M')
 P.CFG['show_sensors']   = bool(_get('display', 'show_sensors', True))
 P.CFG['splash_seconds'] = int(_get('display', 'splash_seconds', 7))
@@ -53,12 +54,15 @@ pagehtml.load(WB_PORT)
 
 
 def _sort_devices(raw):
+    """Trie les appareils dans l'ordre exact de pagevideo.group_by_area :
+    le numero affiche a l'ecran doit designer l'appareil bascule."""
     if not AREA_ORDER:
         return sorted(raw, key=lambda d: d.get('area', 'Autres'))
-    def key(d):
-        a = d.get('area', 'Autres')
-        return AREA_ORDER.index(a) if a in AREA_ORDER else len(AREA_ORDER)
-    return sorted(raw, key=key)
+    order = list(AREA_ORDER)
+    for d in raw:
+        if d.get('area', 'Autres') not in order:
+            order.append(d.get('area', 'Autres'))
+    return sorted(raw, key=lambda d: order.index(d.get('area', 'Autres')))
 
 
 _devices = [d for d in (cfg.get('devices') or []) if d.get('visible', True)]

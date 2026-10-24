@@ -16,18 +16,20 @@ LETTER_MODES = {
 }
 
 DEVICES = SENSORS = SCENES = SCRIPTS = ()
+QUICK_OFF = None
 METEO_CFG = ASSIST_CFG = ARCHIVES_CFG = {}
 AGENTS = []
 ARCHIVES_FOLDER = Path('static/archives')
 
 
 def configure(cfg):
-    global DEVICES, SENSORS, SCENES, SCRIPTS
+    global DEVICES, SENSORS, SCENES, SCRIPTS, QUICK_OFF
     global METEO_CFG, ASSIST_CFG, ARCHIVES_CFG, AGENTS, ARCHIVES_FOLDER
     DEVICES      = cfg['devices']
     SENSORS      = cfg['sensors']
     SCENES       = cfg['scenes']
     SCRIPTS      = cfg['scripts']
+    QUICK_OFF    = cfg.get('quick_off')
     METEO_CFG    = cfg.get('meteo') or {}
     ASSIST_CFG   = cfg.get('assistant') or {}
     AGENTS       = ASSIST_CFG.get('agents') or [
@@ -205,6 +207,13 @@ async def browser_ws_handler(request):
                     continue
                 elif cmd == 'CLEAR_HISTORY' and mode == 'assistant':
                     st.update(assist_history=[], assist_conv_id=None)
+                elif cmd == '*' and mode == 'domotique' and QUICK_OFF:
+                    ok = await HA.activate(session, QUICK_OFF['entity'],
+                                           QUICK_OFF.get('name', ''))
+                    flash = f'{"OK" if ok else "ERR"} - {QUICK_OFF.get("name", "")}'
+                    await asyncio.sleep(1.2)
+                elif cmd == '0' and mode == 'domotique':
+                    st.update(mode='journal', jp=0)
                 elif cmd.isdigit() and mode == 'domotique':
                     idx = st['page'] * P.PAGE_SIZE + int(cmd) - 1
                     if 0 <= idx < len(DEVICES):

@@ -1,7 +1,7 @@
 from datetime import datetime
 from collections import OrderedDict
 
-VERSION   = '1.1'
+VERSION   = '1.2'
 PAGE_SIZE = 9
 
 CFG = {
@@ -27,6 +27,19 @@ _ACCENTS = str.maketrans(
     'àâäéèêëîïôöùûüçÀÂÄÉÈÊËÎÏÔÖÙÛÜÇ',
     'aaaeeeeiioouuucAAAEEEEIIOOUUUC')
 
+# Le Minitel est en 7 bits : les accents passent par le jeu G2 (SS2 = 0x19).
+# Seules les minuscules accentuees existent ; les majuscules perdent l'accent.
+G2 = {
+    'à': b'\x19Aa', 'â': b'\x19Ca', 'ä': b'\x19Ha',
+    'é': b'\x19Be', 'è': b'\x19Ae', 'ê': b'\x19Ce', 'ë': b'\x19He',
+    'î': b'\x19Ci', 'ï': b'\x19Hi', 'ô': b'\x19Co', 'ö': b'\x19Ho',
+    'ù': b'\x19Au', 'û': b'\x19Cu', 'ü': b'\x19Hu', 'ç': b'\x19Kc',
+    '°': b'\x190',  '£': b'\x19#',  'œ': b'\x19z',  'Œ': b'\x19j',
+}
+
+# Colonne de l'heure dans le sous-titre ' ON:xx OFF:xx/xx   HH:MM'
+CLOCK_COL = 20
+
 
 def _goto(r, c):  return bytes([0x1f, 0x40 + r, 0x40 + c])
 def _fg(c):       return bytes([0x1b, 0x40 + c])
@@ -40,16 +53,19 @@ def _center(text, width=40):
 
 
 def _safe(t):
-    """Prepare une chaine pour l'encodage latin-1 en preservant les accents."""
-    t = str(t).translate(_TRANSLIT)
-    out = []
-    for ch in t:
-        try:
-            ch.encode('latin-1')
-            out.append(ch)
-        except UnicodeEncodeError:
-            out.append('?')
-    return ''.join(out)
+    """Normalise la ponctuation typographique en conservant les accents."""
+    return str(t).translate(_TRANSLIT)
+
+
+def _vt(text):
+    """Encode une chaine pour le Minitel : ASCII 7 bits, accents via G2."""
+    out = bytearray()
+    for ch in _safe(text):
+        if ch in G2:
+            out += G2[ch]
+        else:
+            out += ch.translate(_ACCENTS).encode('ascii', 'replace')
+    return bytes(out)
 
 
 def _clean(t):
@@ -61,7 +77,7 @@ def _line(row, text, fg_c=7, bg_c=0, blink=False):
     out = _goto(row, 1) + _bg(bg_c) + _fg(fg_c)
     if blink:
         out += _blink_on()
-    out += _safe(text)[:40].ljust(40).encode('latin-1', 'replace')
+    out += _vt(_safe(text)[:40].ljust(40))
     if blink:
         out += _blink_off()
     return out
@@ -74,18 +90,21 @@ def build_input_line(buf, page=0, total_pages=1):
     else:
         out  = _goto(24, 1) + _bg(7) + _fg(0)
         text = ' Chiffre+ENVOI=toggle  *=eteindre tout '
-    out += text[:40].ljust(40).encode('latin-1', 'replace')
+    out += _vt(text[:40].ljust(40))
     return bytes(out + b'\x11')
+
+
+ASSIST_MAX = 35   # longueur max d'une question saisie sur le Minitel
 
 
 def build_assist_input_line(buf, flash=''):
     if flash:
         out = (_goto(23, 1) + _bg(0) + _fg(3) + _blink_on()
-               + _safe(flash)[:40].ljust(40).encode('latin-1', 'replace')
+               + _vt(_safe(flash)[:40].ljust(40))
                + _blink_off())
     elif buf:
         out = (_goto(23, 1) + _bg(0) + _fg(7)
-               + f' > {_clean(buf)[:35]}_'.ljust(40).encode('latin-1', 'replace'))
+               + _vt(f' > {_safe(buf)[:ASSIST_MAX]}_'.ljust(40)))
     else:
         out = (_goto(23, 1) + _bg(0) + _fg(7)
                + b' Tapez votre question puis ENVOI        ')
@@ -167,7 +186,7 @@ def build_loading():
 
 def build_time_update():
     now = datetime.now().strftime(CFG['date_format'])
-    return bytes(_goto(2, 33) + _fg(3) + now.encode('latin-1', 'replace'))
+    return bytes(_goto(2, CLOCK_COL) + _bg(0) + _fg(3) + _vt(now))
 
 
 def _header(out, title, subtitle, fg_sub=3):
