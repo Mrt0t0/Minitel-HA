@@ -1,7 +1,17 @@
+"""Acces a Home Assistant : etats, services, assistant, meteo, historique.
+
+Les etats sont tenus a jour en continu par ha_live (WebSocket HA). Tant que
+le WebSocket n'est pas connecte, ils sont lus par GET /api/states avec un
+cache court.
+"""
 import time
+from datetime import datetime, timedelta, timezone
+
 import aiohttp
-from collections import deque
-from datetime import datetime
+
+import devices
+import journal
+from i18n import t
 from utils import log
 
 HA_URL  = ''
@@ -9,20 +19,9 @@ HA_TOK  = ''
 HDRS    = {}
 TIMEOUT = aiohttp.ClientTimeout(total=10)
 
-JOURNAL = deque(maxlen=50)
-
-_STATES_CACHE = {'ts': 0.0, 'data': {}}
-_CACHE_TTL    = 2.0
-
-_JOURS_FR = ['lun', 'mar', 'mer', 'jeu', 'ven', 'sam', 'dim']
-
-_CONDITIONS = {
-    'clear-night': 'Nuit clair', 'cloudy': 'Nuageux', 'fog': 'Brouillard',
-    'hail': 'Grele', 'lightning': 'Orage', 'lightning-rainy': 'Orage pluie',
-    'partlycloudy': 'Eclaircie', 'pouring': 'Averses', 'rainy': 'Pluie',
-    'snowy': 'Neige', 'snowy-rainy': 'Neige pluie', 'sunny': 'Ensoleille',
-    'windy': 'Venteux', 'windy-variant': 'Venteux', 'exceptional': 'Exception',
-}
+_STATES    = {'ts': 0.0, 'data': {}}
+_CACHE_TTL = 2.0
+LIVE       = {'connected': False}
 
 
 def configure(url, token):
@@ -33,82 +32,76 @@ def configure(url, token):
               'Content-Type':  'application/json'}
 
 
-def journal_add(name, entity, action, ok):
-    JOURNAL.append({
-        'ts':     datetime.now().strftime('%H:%M'),
-        'name':   name, 'entity': entity,
-        'action': action, 'ok': ok,
-    })
-
-
 def invalidate_cache():
-    _STATES_CACHE['ts'] = 0.0
+    _STATES['ts'] = 0.0
+
+
+def replace_states(states):
+    """Remplace tout l'index (reponse get_states du WebSocket)."""
+    _STATES['data'] = {e['entity_id']: e for e in states}
+    _STATES['ts']   = time.monotonic()
+
+
+def apply_state(entity_id, new_state):
+    """Applique un evenement state_changed."""
+    if new_state is None:
+        _STATES['data'].pop(entity_id, None)
+    else:
+        _STATES['data'][entity_id] = new_state
 
 
 async def fetch_all_states(session, force=False):
-    """Un seul GET /api/states pour toutes les entites, avec cache TTL court.
-    Remplace N appels /api/states/<entity> par 1 seul."""
+    """Index entity_id -> etat. Un seul GET /api/states hors WebSocket."""
+    if LIVE['connected'] and _STATES['data']:
+        return _STATES['data']
     now = time.monotonic()
-    if not force and (now - _STATES_CACHE['ts']) < _CACHE_TTL and _STATES_CACHE['data']:
-        return _STATES_CACHE['data']
+    if not force and (now - _STATES['ts']) < _CACHE_TTL and _STATES['data']:
+        return _STATES['data']
     try:
         async with session.get(f'{HA_URL}/api/states',
                                headers=HDRS, timeout=TIMEOUT) as r:
             if r.status != 200:
                 log('ERR', f'/api/states HTTP {r.status}')
-                return _STATES_CACHE['data']
+                return _STATES['data']
             raw = await r.json()
     except Exception as e:
         log('ERR', f'fetch_all_states: {e}')
-        return _STATES_CACHE['data']
-    index = {e['entity_id']: e for e in raw}
-    _STATES_CACHE['ts']   = now
-    _STATES_CACHE['data'] = index
-    return index
+        return _STATES['data']
+    replace_states(raw)
+    return _STATES['data']
 
 
 def _state_of(index, entity):
-    if not entity:
-        return '?'
-    e = index.get(entity)
+    e = index.get(entity) if entity else None
     return e.get('state', '?') if e else '?'
 
 
-async def get_state(session, entity):
-    index = await fetch_all_states(session)
-    e = index.get(entity)
-    if not e:
-        return '?', {}
-    return e.get('state', '?'), e.get('attributes', {})
-
-
-async def _call_service(session, domain, service, entity, name, action):
+async def call_service(session, act, name=''):
+    """Appelle un service HA. act = {domain, service, data} (devices.py)."""
+    entity = act['data'].get('entity_id', '')
+    label  = f'{act["domain"]}.{act["service"]}'
     try:
         async with session.post(
-                f'{HA_URL}/api/services/{domain}/{service}',
-                headers=HDRS, json={'entity_id': entity},
-                timeout=TIMEOUT) as r:
+                f'{HA_URL}/api/services/{act["domain"]}/{act["service"]}',
+                headers=HDRS, json=act['data'], timeout=TIMEOUT) as r:
             ok = r.status in (200, 201)
     except Exception as e:
-        log('ERR', f'{service} {entity}: {e}')
+        log('ERR', f'{label} {entity}: {e}')
         ok = False
-    journal_add(name or entity, entity, action, ok)
+    journal.add(name or entity, entity, act['service'], ok)
     invalidate_cache()
-    log('HA', f'{action} {entity} -> {"OK" if ok else "ERR"}')
+    log('HA', f'{label} {entity} -> {"OK" if ok else "ERR"}')
     return ok
 
 
-async def toggle(session, entity, name=''):
-    return await _call_service(session, entity.split('.')[0],
-                               'toggle', entity, name, 'toggle')
-
-
 async def activate(session, entity, name=''):
-    return await _call_service(session, entity.split('.')[0],
-                               'turn_on', entity, name, 'activate')
+    """Active une scene / un script."""
+    return await call_service(session, {'domain': entity.split('.')[0],
+                                        'service': 'turn_on',
+                                        'data': {'entity_id': entity}}, name)
 
 
-async def converse(session, text, agent_id='home_assistant',
+async def converse(session, text, agent_id='conversation.home_assistant',
                    language='fr', conversation_id=None):
     payload = {'text': text, 'language': language, 'agent_id': agent_id}
     if conversation_id:
@@ -119,45 +112,44 @@ async def converse(session, text, agent_id='home_assistant',
                                 timeout=aiohttp.ClientTimeout(total=30)) as r:
             if r.status != 200:
                 if conversation_id and r.status == 400:
-                    return {'ok': False, 'speech': 'Session expiree, reessayez.',
+                    return {'ok': False, 'speech': t('assist.expired'),
                             'reset_conv': True}
-                return {'ok': False, 'speech': f'Erreur HA {r.status}'}
+                return {'ok': False, 'speech': t('assist.error', s=r.status)}
             d = await r.json()
     except Exception as e:
         log('ERR', f'converse: {e}')
-        return {'ok': False, 'speech': 'Assistant injoignable'}
+        return {'ok': False, 'speech': t('assist.unreachable')}
     resp   = d.get('response', {})
     speech = resp.get('speech', {}).get('plain', {}).get('speech', '')
     invalidate_cache()
-    return {'ok': True, 'speech': speech or '(pas de reponse)',
+    return {'ok': True, 'speech': speech or t('assist.none'),
             'conv_id': d.get('conversation_id')}
+
+
+def _entry(index, cfg, i):
+    e = index.get(cfg['entity']) or {}
+    return {
+        'num':    i,
+        'name':   cfg.get('name', cfg['entity']),
+        'entity': cfg['entity'],
+        'area':   cfg.get('area', 'Autres'),
+        'unit':   cfg.get('unit', ''),
+        'state':  e.get('state', '?'),
+        'attrs':  e.get('attributes', {}),
+    }
 
 
 async def fetch_data(session, devices_cfg, sensors_cfg):
     index = await fetch_all_states(session)
-    devices = [{
-        'num':    i,
-        'name':   d['name'],
-        'entity': d['entity'],
-        'area':   d.get('area', 'Autres'),
-        'state':  _state_of(index, d['entity']),
-    } for i, d in enumerate(devices_cfg, 1)]
-    sensors = [{
-        'name':  s['name'],
-        'area':  s.get('area', '?'),
-        'unit':  s.get('unit', ''),
-        'state': _state_of(index, s['entity']),
-    } for s in sensors_cfg]
-    stats = {
-        'on':    sum(1 for d in devices if d['state'] == 'on'),
-        'off':   sum(1 for d in devices if d['state'] == 'off'),
-        'total': len(devices),
-    }
-    return devices, sensors, stats
+    devs  = [_entry(index, d, i) for i, d in enumerate(devices_cfg, 1)]
+    sens  = [_entry(index, s, i) for i, s in enumerate(sensors_cfg, 1)]
+    on    = sum(1 for d in devs if devices.is_active(d))
+    stats = {'on': on, 'off': len(devs) - on, 'total': len(devs)}
+    return devs, sens, stats
 
 
 def condition_label(cond):
-    return _CONDITIONS.get(cond, str(cond)[:10])
+    return t('cond').get(cond, str(cond)[:10])
 
 
 def _fmt_forecasts(raw, rtype='daily'):
@@ -167,7 +159,7 @@ def _fmt_forecasts(raw, rtype='daily'):
         try:
             dt = datetime.fromisoformat(dt_str.replace('Z', '+00:00'))
             label = (dt.strftime('%Hh') if rtype == 'hourly'
-                     else _JOURS_FR[dt.weekday()] + dt.strftime(' %d'))
+                     else t('days_short')[dt.weekday()] + dt.strftime(' %d'))
         except Exception:
             label = dt_str[:5] or '?'
         precip = f.get('precipitation')
@@ -183,17 +175,16 @@ def _fmt_forecasts(raw, rtype='daily'):
 
 async def fetch_meteo(session, meteo_cfg):
     index = await fetch_all_states(session)
-    ms    = meteo_cfg.get('sensors', {})
+    ms    = meteo_cfg.get('sensors') or {}
 
-    t = _state_of(index, ms.get('temperature_ext', ''))
-    h = _state_of(index, ms.get('humidity_ext', ''))
-    ext = {'temp': t if t != '?' else None, 'hum': h if h != '?' else None}
+    def val(entity):
+        v = _state_of(index, entity)
+        return None if v in devices.UNAVAILABLE else v
 
-    rooms = [{
-        'name': room,
-        'temp': (lambda v: v if v != '?' else None)(_state_of(index, ent.get('temp', ''))),
-        'hum':  (lambda v: v if v != '?' else None)(_state_of(index, ent.get('hum', ''))),
-    } for room, ent in ms.get('rooms', {}).items()]
+    ext = {'temp': val(ms.get('temperature_ext', '')),
+           'hum':  val(ms.get('humidity_ext', ''))}
+    rooms = [{'name': room, 'temp': val(ent.get('temp', '')), 'hum': val(ent.get('hum', ''))}
+             for room, ent in (ms.get('rooms') or {}).items()]
 
     forecast = []
     went = meteo_cfg.get('weather_entity')
@@ -219,14 +210,36 @@ async def fetch_meteo(session, meteo_cfg):
             if raw:
                 forecast = _fmt_forecasts(raw, rtype)
                 break
-        if not forecast:
-            attrs = (index.get(went) or {}).get('attributes', {})
-            raw   = attrs.get('forecast', [])
-            if raw:
-                forecast = _fmt_forecasts(raw, 'daily')
-            if ext['temp'] is None:
-                tmp = attrs.get('temperature')
-                if tmp is not None:
-                    ext['temp'] = tmp
+        attrs = (index.get(went) or {}).get('attributes', {})
+        if not forecast and attrs.get('forecast'):
+            forecast = _fmt_forecasts(attrs['forecast'], 'daily')
+        if ext['temp'] is None and attrs.get('temperature') is not None:
+            ext['temp'] = attrs['temperature']
 
     return {'ext': ext, 'rooms': rooms, 'forecast': forecast}
+
+
+async def fetch_history(session, entity, hours=24):
+    """Points (datetime UTC, valeur) numeriques des `hours` dernieres heures."""
+    start = datetime.now(timezone.utc) - timedelta(hours=hours)
+    url = (f'{HA_URL}/api/history/period/{start.strftime("%Y-%m-%dT%H:%M:%S")}+00:00'
+           f'?filter_entity_id={entity}&minimal_response&no_attributes')
+    try:
+        async with session.get(url, headers=HDRS,
+                               timeout=aiohttp.ClientTimeout(total=20)) as r:
+            if r.status != 200:
+                log('ERR', f'history {entity}: HTTP {r.status}')
+                return []
+            data = await r.json()
+    except Exception as e:
+        log('ERR', f'history {entity}: {e}')
+        return []
+    points = []
+    for e in (data[0] if data else []):
+        try:
+            v  = float(e['state'])
+            dt = datetime.fromisoformat(str(e.get('last_changed', '')).replace('Z', '+00:00'))
+        except (KeyError, TypeError, ValueError):
+            continue
+        points.append((dt, v))
+    return points
