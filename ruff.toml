@@ -1,0 +1,13 @@
+# Lint lance par la CI : `ruff check .`
+line-length = 100
+target-version = "py311"
+
+[lint]
+select = ["E", "W", "F", "B", "I"]
+# Style compact du projet : alignements, une ligne par petite fonction
+ignore = ["E221", "E241", "E272", "E501", "E701", "E702"]
+
+[lint.isort]
+known-first-party = ["alerts", "devices", "discover", "ha_client", "ha_live", "hub", "i18n",
+                     "journal", "pagehtml", "pagevideo", "server", "session", "settings",
+                     "utils", "ws_browser", "ws_minitel", "tests"]
